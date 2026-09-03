@@ -55,13 +55,25 @@ cargo run -p galdeck-hid --example verify
 mkdir -p ~/.config/galdeck && cp config/galdeck.example.toml ~/.config/galdeck/config.toml
 cargo install --path crates/galdeck-daemon
 cargo install --path crates/galdeck-cli
-cp systemd/galdeck.service ~/.config/systemd/user/
+mkdir -p ~/.config/systemd/user && cp systemd/galdeck.service ~/.config/systemd/user/
 systemctl --user daemon-reload && systemctl --user enable --now galdeck
 galdeck status
 ```
 
 Configuration lives in `~/.config/galdeck/config.toml` — see the commented
 [example](config/galdeck.example.toml). `galdeck reload` applies edits live.
+
+Notes on running as a service:
+
+- Apps you launch from a key are children of the daemon, so the unit sets
+  `KillMode=process`; without it, `systemctl --user restart galdeck` would
+  close the windows you opened from the deck. Their memory still counts
+  toward the service in `systemctl status` — cosmetic, not a leak.
+- GUI actions need the systemd user manager to know your graphical
+  session (`systemctl --user show-environment` should list `WAYLAND_DISPLAY`
+  or `DISPLAY`). GNOME and KDE do this for you.
+- Logs: `journalctl --user -u galdeck -f`. Set `RUST_LOG=debug` in the unit
+  for per-event tracing.
 
 ## Device background
 

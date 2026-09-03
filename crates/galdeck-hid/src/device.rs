@@ -51,6 +51,20 @@ pub struct Galleon {
     encoder_states: [bool; ENCODER_COUNT as usize],
 }
 
+/// A read cut short by a signal (`EINTR`) — the daemon spawns child
+/// processes and handles SIGTERM, so this is routine and must not be
+/// mistaken for the device failing.
+fn is_interrupted(error: &hidapi::HidError) -> bool {
+    match error {
+        hidapi::HidError::IoError { error } => error.kind() == std::io::ErrorKind::Interrupted,
+        // The hidraw backend reports it as strerror(EINTR) text.
+        hidapi::HidError::HidApiError { message } => {
+            message.eq_ignore_ascii_case("Interrupted system call")
+        }
+        _ => false,
+    }
+}
+
 fn to_cpath(path: &str) -> Result<std::ffi::CString, Error> {
     std::ffi::CString::new(path)
         .map_err(|_| Error::InvalidArgument(format!("bad device path {path:?}")))
@@ -173,14 +187,18 @@ impl Galleon {
 
             let remaining = timeout.saturating_sub(started.elapsed());
             let slice = remaining.min(POLL_SLICE);
-            let len = self
-                .device
-                .read_timeout(&mut buf, slice.as_millis() as i32)?;
-            if len > 0 {
-                let events = self.decode(&buf[..len]);
-                if !events.is_empty() {
-                    return Ok(events);
+            match self.device.read_timeout(&mut buf, slice.as_millis() as i32) {
+                Ok(len) if len > 0 => {
+                    let events = self.decode(&buf[..len]);
+                    if !events.is_empty() {
+                        return Ok(events);
+                    }
                 }
+                Ok(_) => {}
+                // A signal interrupted the read; nothing is wrong with the
+                // device, so resume (the caller's timeout still bounds us).
+                Err(e) if is_interrupted(&e) => {}
+                Err(e) => return Err(e.into()),
             }
             if started.elapsed() >= timeout {
                 return Ok(Vec::new());
