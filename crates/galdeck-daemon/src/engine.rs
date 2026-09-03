@@ -7,17 +7,15 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use ab_glyph::FontVec;
 use anyhow::Result;
-use galdeck_hid::ids::{ENCODER_COUNT, KEY_COUNT};
-use galdeck_hid::{Event, Galleon};
+use galdeck_hid::{Buttons, Encoders, Event, Galleon, Rgb};
 use galdeck_ipc::{Request, Response, Status};
 
-use crate::config::{parse_color, Config, EncoderConfig, KeyConfig, Page};
+use crate::config::{Config, EncoderConfig, KeyConfig, Page};
 use crate::render;
 
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(2);
-const DEFAULT_KEY_COLOR: [u8; 3] = [24, 26, 32];
+const DEFAULT_KEY_COLOR: Rgb = Rgb::new(24, 26, 32);
 /// Cap on commands spawned for one coalesced rotation report.
 const MAX_DETENTS_PER_EVENT: u32 = 8;
 
@@ -30,7 +28,7 @@ pub struct ControlMsg {
 pub struct Engine {
     config_path: PathBuf,
     config: Config,
-    font: Option<FontVec>,
+    font: Option<galdeck_hid::Font>,
     page_index: usize,
     brightness: u8,
     device: Option<DeviceState>,
@@ -52,7 +50,7 @@ impl Engine {
         control_rx: Receiver<ControlMsg>,
         shutdown: Arc<AtomicBool>,
     ) -> Result<Self> {
-        let font = render::load_font(config.font.as_deref())?;
+        let font = render::load_font(config.font.as_deref());
         let brightness = config.brightness;
         Ok(Engine {
             config_path,
@@ -178,51 +176,35 @@ impl Engine {
         let result: std::result::Result<(), galdeck_hid::Error> = (|| {
             state.deck.set_brightness(self.brightness)?;
 
-            for key in 0..KEY_COUNT {
-                match page.keys.iter().find(|k| k.key == key) {
+            for index in Buttons::indices() {
+                match page.keys.iter().find(|k| k.key == index) {
                     Some(cfg) => {
                         let background = cfg
                             .color
                             .as_deref()
-                            .map(parse_color)
-                            .transpose()
-                            .unwrap_or(Some(DEFAULT_KEY_COLOR))
+                            .and_then(Rgb::from_hex)
                             .unwrap_or(DEFAULT_KEY_COLOR);
-                        match render::render_key(
+                        let canvas = render::key(
                             background,
                             cfg.image.as_deref(),
                             cfg.label.as_deref(),
                             self.font.as_ref(),
-                        ) {
-                            Ok(rgb) => state.deck.set_key_rgb(key, &rgb)?,
-                            Err(e) => {
-                                log::warn!("rendering key {key}: {e}");
-                                state.deck.fill_key_color(
-                                    key,
-                                    background[0],
-                                    background[1],
-                                    background[2],
-                                )?;
-                            }
-                        }
+                        );
+                        state.deck.button(index)?.draw(&canvas)?;
                     }
-                    None => state.deck.fill_key_color(key, 0, 0, 0)?,
+                    None => state.deck.button(index)?.clear()?,
                 }
             }
 
-            for encoder in 0..ENCODER_COUNT {
-                let ring = page
+            for index in Encoders::indices() {
+                let color = page
                     .encoders
                     .iter()
-                    .find(|e| e.encoder == encoder)
+                    .find(|e| e.encoder == index)
                     .and_then(|e| e.ring.as_deref())
-                    .map(parse_color)
-                    .transpose()
-                    .unwrap_or(None)
-                    .unwrap_or([0, 0, 0]);
-                state
-                    .deck
-                    .set_encoder_ring(encoder, ring[0], ring[1], ring[2])?;
+                    .and_then(Rgb::from_hex)
+                    .unwrap_or(Rgb::BLACK);
+                state.deck.encoder(index)?.ring().set_all(color)?;
             }
 
             let text = page
@@ -230,14 +212,8 @@ impl Engine {
                 .as_deref()
                 .or(self.config.lcd_text.as_deref())
                 .unwrap_or(&page.name);
-            let rgb = render::render_lcd(text, self.font.as_ref());
-            state.deck.set_lcd_region_rgb(
-                0,
-                0,
-                galdeck_hid::ids::LCD_WIDTH,
-                galdeck_hid::ids::LCD_HEIGHT,
-                &rgb,
-            )?;
+            let screen = render::lcd(text, self.font.as_ref());
+            state.deck.lcd().draw(&screen)?;
             Ok(())
         })();
 
@@ -349,14 +325,7 @@ impl Engine {
             }
             Request::Reload => match Config::load(&self.config_path) {
                 Ok(config) => {
-                    match render::load_font(config.font.as_deref()) {
-                        Ok(font) => self.font = font,
-                        Err(e) => {
-                            return Response::Error {
-                                message: e.to_string(),
-                            }
-                        }
-                    }
+                    self.font = render::load_font(config.font.as_deref());
                     self.brightness = config.brightness;
                     let current = self.current_page().name.clone();
                     self.page_index = config

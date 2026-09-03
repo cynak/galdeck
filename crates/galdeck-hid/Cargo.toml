@@ -10,11 +10,14 @@ authors.workspace = true
 
 [features]
 default = ["encode"]
-# JPEG encoding helpers (set_key_rgb / set_lcd_region_rgb)
+# Canvas encoding and image loading: Canvas::to_jpeg / load / load_scaled,
+# and the draw() methods on Button and Lcd that use them. Without it the
+# framework still drives LEDs and uploads pre-encoded JPEGs.
 encode = ["dep:image"]
 
 [dependencies]
 hidapi = { workspace = true }
+ab_glyph = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
 image = { workspace = true, optional = true }

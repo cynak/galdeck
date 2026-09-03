@@ -110,11 +110,11 @@ impl Config {
         }
         for page in &self.pages {
             for key in &page.keys {
-                if key.key >= galdeck_hid::ids::KEY_COUNT {
+                if key.key >= galdeck_hid::Buttons::COUNT {
                     bail!("page {:?}: key {} out of range 0-11", page.name, key.key);
                 }
                 if let Some(color) = &key.color {
-                    parse_color(color)?;
+                    check_color(color)?;
                 }
                 if let Some(target) = &key.page {
                     if !self.pages.iter().any(|p| &p.name == target) {
@@ -127,7 +127,7 @@ impl Config {
                 }
             }
             for encoder in &page.encoders {
-                if encoder.encoder >= galdeck_hid::ids::ENCODER_COUNT {
+                if encoder.encoder >= galdeck_hid::Encoders::COUNT {
                     bail!(
                         "page {:?}: encoder {} out of range 0-1",
                         page.name,
@@ -135,7 +135,7 @@ impl Config {
                     );
                 }
                 if let Some(color) = &encoder.ring {
-                    parse_color(color)?;
+                    check_color(color)?;
                 }
             }
         }
@@ -143,17 +143,12 @@ impl Config {
     }
 }
 
-/// Parse `#rrggbb` into RGB.
-pub fn parse_color(s: &str) -> Result<[u8; 3]> {
-    let hex = s.strip_prefix('#').unwrap_or(s);
-    if hex.len() != 6 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
-        bail!("expected color like #rrggbb, got {s:?}");
+/// Validate a `#rrggbb` color string.
+fn check_color(value: &str) -> Result<()> {
+    if galdeck_hid::Rgb::from_hex(value).is_none() {
+        bail!("expected a color like #rrggbb, got {value:?}");
     }
-    Ok([
-        u8::from_str_radix(&hex[0..2], 16)?,
-        u8::from_str_radix(&hex[2..4], 16)?,
-        u8::from_str_radix(&hex[4..6], 16)?,
-    ])
+    Ok(())
 }
 
 /// Default config file location: `$XDG_CONFIG_HOME/galdeck/config.toml`.
@@ -182,11 +177,16 @@ mod tests {
     }
 
     #[test]
-    fn parses_colors() {
-        assert_eq!(parse_color("#ff8000").unwrap(), [255, 128, 0]);
-        assert_eq!(parse_color("010203").unwrap(), [1, 2, 3]);
-        assert!(parse_color("#f80").is_err());
-        assert!(parse_color("#zzzzzz").is_err());
+    fn rejects_malformed_colors() {
+        let bad = r##"
+            [[pages]]
+            name = "main"
+            [[pages.keys]]
+            key = 0
+            color = "#f80"
+        "##;
+        let config: Config = toml::from_str(bad).unwrap();
+        assert!(config.validate().is_err());
     }
 
     #[test]

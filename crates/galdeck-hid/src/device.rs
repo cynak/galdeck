@@ -4,9 +4,11 @@ use std::time::{Duration, Instant};
 
 use hidapi::{DeviceInfo, HidApi, HidDevice};
 
+use crate::controls::{Button, Buttons, Encoder, Encoders, Lcd};
 use crate::error::Error;
 use crate::ids::*;
 use crate::protocol::{self, InputReport};
+use crate::Rgb;
 
 /// Granularity of the poll loop; keepalives are refreshed at least this
 /// often while polling.
@@ -255,15 +257,56 @@ impl Galleon {
         Ok(())
     }
 
-    /// Fill one key (0-11, row-major) with a solid color.
-    pub fn fill_key_color(&mut self, key: u8, r: u8, g: u8, b: u8) -> Result<(), Error> {
+    // ---- component accessors: the framework's public drawing surface ----
+
+    /// The 12 keys.
+    pub fn buttons(&mut self) -> Buttons<'_> {
+        Buttons::new(self)
+    }
+
+    /// One key by index (0-11, row-major from the top-left).
+    pub fn button(&mut self, index: u8) -> Result<Button<'_>, Error> {
+        Button::new(self, index)
+    }
+
+    /// The 720x384 info screen.
+    pub fn lcd(&mut self) -> Lcd<'_> {
+        Lcd::new(self)
+    }
+
+    /// Both rotary encoders.
+    pub fn encoders(&mut self) -> Encoders<'_> {
+        Encoders::new(self)
+    }
+
+    /// One rotary encoder (0 = left, 1 = right).
+    pub fn encoder(&mut self, index: u8) -> Result<Encoder<'_>, Error> {
+        Encoder::new(self, index)
+    }
+
+    // ---- transport used by the component handles ----
+
+    pub(crate) fn key_state(&self, index: u8) -> bool {
+        self.key_states
+            .get(index as usize)
+            .copied()
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn encoder_state(&self, index: u8) -> bool {
+        self.encoder_states
+            .get(index as usize)
+            .copied()
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn send_key_color(&mut self, key: u8, color: Rgb) -> Result<(), Error> {
         self.tick_keepalive()?;
-        self.send_feature(&protocol::key_color_report(key, r, g, b)?)?;
+        self.send_feature(&protocol::key_color_report(key, color.r, color.g, color.b)?)?;
         Ok(())
     }
 
-    /// Upload a 160x160 JPEG to one key.
-    pub fn set_key_jpeg(&mut self, key: u8, jpeg: &[u8]) -> Result<(), Error> {
+    pub(crate) fn send_key_jpeg(&mut self, key: u8, jpeg: &[u8]) -> Result<(), Error> {
         for report in protocol::key_image_reports(key, jpeg)? {
             self.tick_keepalive()?;
             self.device.write(&report)?;
@@ -271,59 +314,48 @@ impl Galleon {
         Ok(())
     }
 
-    /// Draw a JPEG into a rectangle of the 720x384 LCD segment.
-    pub fn set_lcd_region_jpeg(
+    pub(crate) fn send_lcd_region(
         &mut self,
         x: u16,
         y: u16,
-        w: u16,
-        h: u16,
+        width: u16,
+        height: u16,
         jpeg: &[u8],
     ) -> Result<(), Error> {
-        for report in protocol::lcd_region_reports(x, y, w, h, jpeg)? {
+        for report in protocol::lcd_region_reports(x, y, width, height, jpeg)? {
             self.tick_keepalive()?;
             self.device.write(&report)?;
         }
         Ok(())
     }
 
-    /// Set one visual ring segment (0 = top, clockwise) of an encoder.
-    pub fn set_encoder_ring_segment(
+    pub(crate) fn send_ring_segment(
         &mut self,
         encoder: u8,
-        visual_segment: u8,
-        r: u8,
-        g: u8,
-        b: u8,
+        segment: u8,
+        color: Rgb,
     ) -> Result<(), Error> {
-        let led = protocol::encoder_ring_led_index(encoder, visual_segment)?;
+        let led = protocol::encoder_ring_led_index(encoder, segment)?;
         self.tick_keepalive()?;
-        self.send_feature(&protocol::encoder_led_report(led, r, g, b)?)?;
+        self.send_feature(&protocol::encoder_led_report(
+            led, color.r, color.g, color.b,
+        )?)?;
         Ok(())
     }
 
-    /// Set a whole encoder ring to one color.
-    pub fn set_encoder_ring(&mut self, encoder: u8, r: u8, g: u8, b: u8) -> Result<(), Error> {
+    pub(crate) fn send_ring_color(&mut self, encoder: u8, color: Rgb) -> Result<(), Error> {
         for segment in 0..ENCODER_RING_LEDS {
-            self.set_encoder_ring_segment(encoder, segment, r, g, b)?;
+            self.send_ring_segment(encoder, segment, color)?;
         }
         Ok(())
     }
 
-    /// Blank all keys, rings, and the LCD segment.
+    /// Blank every key, ring, and the info screen.
     pub fn clear_all(&mut self) -> Result<(), Error> {
-        for key in 0..KEY_COUNT {
-            self.fill_key_color(key, 0, 0, 0)?;
-        }
-        for encoder in 0..ENCODER_COUNT {
-            self.set_encoder_ring(encoder, 0, 0, 0)?;
-        }
+        self.buttons().clear()?;
+        self.encoders().clear_rings()?;
         #[cfg(feature = "encode")]
-        {
-            let black = vec![0u8; (LCD_WIDTH as usize) * (LCD_HEIGHT as usize) * 3];
-            let jpeg = encode_jpeg_rgb(LCD_WIDTH as u32, LCD_HEIGHT as u32, &black)?;
-            self.set_lcd_region_jpeg(0, 0, LCD_WIDTH, LCD_HEIGHT, &jpeg)?;
-        }
+        self.lcd().clear()?;
         Ok(())
     }
 
@@ -355,49 +387,4 @@ impl Galleon {
         let len = self.device.get_feature_report(&mut buf)?;
         protocol::parse_serial_number(&buf[..len]).ok_or(Error::MalformedReport("serial number"))
     }
-
-    /// Render an RGB8 buffer to one key (encodes to JPEG internally).
-    /// `rgb` must be exactly 160*160*3 bytes.
-    #[cfg(feature = "encode")]
-    pub fn set_key_rgb(&mut self, key: u8, rgb: &[u8]) -> Result<(), Error> {
-        let expected = (KEY_PIXELS * KEY_PIXELS * 3) as usize;
-        if rgb.len() != expected {
-            return Err(Error::InvalidArgument(format!(
-                "key image must be {expected} bytes (160x160 rgb), got {}",
-                rgb.len()
-            )));
-        }
-        let jpeg = encode_jpeg_rgb(KEY_PIXELS, KEY_PIXELS, rgb)?;
-        self.set_key_jpeg(key, &jpeg)
-    }
-
-    /// Render an RGB8 buffer into a rectangle of the LCD segment.
-    #[cfg(feature = "encode")]
-    pub fn set_lcd_region_rgb(
-        &mut self,
-        x: u16,
-        y: u16,
-        w: u16,
-        h: u16,
-        rgb: &[u8],
-    ) -> Result<(), Error> {
-        let expected = w as usize * h as usize * 3;
-        if rgb.len() != expected {
-            return Err(Error::InvalidArgument(format!(
-                "lcd image must be {expected} bytes ({w}x{h} rgb), got {}",
-                rgb.len()
-            )));
-        }
-        let jpeg = encode_jpeg_rgb(w as u32, h as u32, rgb)?;
-        self.set_lcd_region_jpeg(x, y, w, h, &jpeg)
-    }
-}
-
-/// Encode an RGB8 pixel buffer as a baseline JPEG (quality 90).
-#[cfg(feature = "encode")]
-pub fn encode_jpeg_rgb(width: u32, height: u32, rgb: &[u8]) -> Result<Vec<u8>, Error> {
-    let mut out = Vec::new();
-    let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 90);
-    image::ImageEncoder::write_image(encoder, rgb, width, height, image::ExtendedColorType::Rgb8)?;
-    Ok(out)
 }

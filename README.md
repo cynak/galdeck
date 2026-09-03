@@ -1,8 +1,9 @@
 # galdeck
 
 Linux support for the **Elgato Stream Deck module built into the Corsair
-Galleon 100 SD keyboard** — a userspace driver, a config-driven daemon, and
-a CLI. No kernel module, no root daemon, no official software required.
+Galleon 100 SD keyboard** — a hardware framework you can build on, plus a
+config-driven daemon and CLI that use it. No kernel module, no root
+daemon, no official software required.
 
 On Windows/macOS the module is driven by Elgato's Stream Deck app; on Linux
 it sits inert in "hardware mode". galdeck implements the host side of the
@@ -24,15 +25,78 @@ keepalive and nothing public implements it yet.
 Not affiliated with or endorsed by Corsair or Elgato. "Stream Deck" and
 "Galleon" are their trademarks.
 
-## What's in the box
+## Layers
+
+galdeck is a **hardware framework** with a reference consumer on top. The
+split is deliberate: the framework owns the device and nothing about your
+workflow, so anyone can build their own experience on it.
+
+```
+   your project  ─ mappings, widgets, themes, animations
+        │  uses as a library
+   galdeck-hid   ─ Buttons · Lcd · Encoders · Canvas · events   ← the framework
+        │  hidraw
+   Galleon 100 SD Stream Deck module (1b1c:2b18)
+```
 
 | Piece | What it does |
 |---|---|
-| [`crates/galdeck-hid`](crates/galdeck-hid) | Driver library: device discovery (`1b1c:2b18` interface 0), keepalive, key/LCD JPEG uploads, encoder ring LEDs, input events. Plus `examples/verify.rs`, the hardware checkout harness. |
-| [`crates/galdeck-daemon`](crates/galdeck-daemon) | User daemon: TOML profiles with pages, key labels/icons/colors, shell actions, encoder bindings; auto-reconnect; control socket. |
+| [`crates/galdeck-hid`](crates/galdeck-hid) | **The framework.** Component handles for each control, a drawing canvas, colors, fonts, an event stream, and the keepalive that keeps the module awake. Plus `examples/verify.rs`, the hardware checkout harness. |
+| [`crates/galdeck-daemon`](crates/galdeck-daemon) | A reference consumer: TOML profiles with pages, key labels/icons/colors, shell actions, encoder bindings; auto-reconnect; control socket. |
 | [`crates/galdeck-cli`](crates/galdeck-cli) | `galdeck` command: `detect`, `status`, `brightness`, `page`, `reload`, `ping`. |
 | [`docs/protocol.md`](docs/protocol.md) | Independent protocol documentation (CC-BY 4.0). |
 | [`udev/`](udev), [`systemd/`](systemd) | Scoped udev rule (uaccess, not world-writable) and a user service unit. |
+
+### Using the framework
+
+Each control is its own handle, borrowed from the open device:
+
+| Control | Handle | Hardware |
+|---|---|---|
+| Keys | `Buttons` / `Button` | 12 keys, 3x4, each a 160x160 display |
+| Info screen | `Lcd` | one 720x384 drawable region |
+| Knobs | `Encoders` / `Encoder` / `Ring` | 2 push-click encoders, 4 addressable RGB LEDs each |
+
+```rust
+use galdeck_hid::{Align, Event, Galleon, Rgb, TextStyle};
+use std::time::Duration;
+
+let api = hidapi::HidApi::new()?;
+let mut deck = Galleon::open(&api)?;
+deck.set_brightness(70)?;
+
+// A solid key is one cheap feature report; an image is a canvas upload.
+deck.button(0)?.set_color(Rgb::from_hex("#1d3b53").unwrap())?;
+
+let mut canvas = deck.button(1)?.canvas();      // blank 160x160
+canvas.fill(Rgb::new(20, 20, 28));
+canvas.draw_line((10, 150), (150, 10), Rgb::GREEN);
+canvas.fill_circle((80, 60), 24, Rgb::RED);
+if let Some(font) = galdeck_hid::Font::system() {
+    canvas.draw_text("Ready", 80, 130, &TextStyle::new(&font, 28.0).align(Align::Center));
+}
+deck.button(1)?.draw(&canvas)?;
+
+// Rings address segments clockwise from the top, whatever the hardware order.
+deck.encoder(0)?.ring().set_level(0.5, Rgb::GREEN, Rgb::BLACK)?;
+
+// Partial screen updates are much cheaper than full redraws.
+deck.lcd().draw_at(20, 20, &canvas)?;
+
+for event in deck.poll(Duration::from_secs(5))? {
+    match event {
+        Event::KeyDown(key) => println!("key {key} pressed"),
+        Event::EncoderRotate(knob, delta) => println!("knob {knob} moved {delta}"),
+        _ => {}
+    }
+}
+```
+
+The module only accepts drawing while in *software mode*, which it leaves
+without a keepalive roughly twice a second. Every drawing call and `poll`
+refreshes that for you; after a long gap, `take_mode_reentry()` tells you
+the firmware reset its own state and your content needs redrawing. Run
+`cargo doc -p galdeck-hid --open` for the full API.
 
 ## Quick start
 

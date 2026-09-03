@@ -56,6 +56,9 @@ pub const OUTPUT_REPORT_LEN: usize = 1024;
 /// Input reports arrive on a 512-byte endpoint.
 pub const INPUT_REPORT_LEN: usize = 512;
 
+/// JPEG quality used when the framework encodes a canvas for the device.
+pub const DEFAULT_JPEG_QUALITY: u8 = 90;
+
 /// Firmware versions this protocol implementation is validated against:
 /// 3.06.005 by the upstream reference implementations, 3.05.003 by this
 /// project on physical hardware (2026-09-03).
