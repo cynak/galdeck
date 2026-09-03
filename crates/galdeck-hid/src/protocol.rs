@@ -84,10 +84,14 @@ pub fn encoder_led_report(
     Ok(report)
 }
 
-/// Per-encoder rotation between the hardware LED order and the visual
-/// order (segment 0 = top, clockwise). Derived from the reference
-/// implementations; matches the physical rings on firmware 3.06.005.
-const RING_VISUAL_ROTATION: [u8; ENCODER_COUNT as usize] = [3, 1];
+/// Raw hardware LED index for each visual ring position, per encoder.
+/// Row = encoder (0 left, 1 right); column = visual position 0-3 starting
+/// at the TOP of the ring and proceeding CLOCKWISE. Validated visually on
+/// physical hardware (firmware 3.05.003, 2026-09-03): the hardware index
+/// order runs counter-clockwise around each ring, with a different start
+/// offset per ring.
+const RING_LED_CLOCKWISE_FROM_TOP: [[u8; ENCODER_RING_LEDS as usize]; ENCODER_COUNT as usize] =
+    [[5, 4, 7, 6], [3, 2, 1, 0]];
 
 /// Raw hardware LED index for a visual ring segment of an encoder.
 /// `visual_segment` 0 is the top of the ring, proceeding clockwise.
@@ -104,9 +108,7 @@ pub fn encoder_ring_led_index(encoder: u8, visual_segment: u8) -> Result<u8, Err
             ENCODER_RING_LEDS - 1
         )));
     }
-    let rotation = RING_VISUAL_ROTATION[encoder as usize];
-    let hardware_segment = (visual_segment + ENCODER_RING_LEDS - rotation) % ENCODER_RING_LEDS;
-    Ok((1 - encoder) * ENCODER_RING_LEDS + hardware_segment)
+    Ok(RING_LED_CLOCKWISE_FROM_TOP[encoder as usize][visual_segment as usize])
 }
 
 /// Output reports for uploading a JPEG to one key. The JPEG must be
@@ -150,7 +152,11 @@ pub fn lcd_region_reports(
     h: u16,
     jpeg: &[u8],
 ) -> Result<Vec<Vec<u8>>, Error> {
-    if w == 0 || h == 0 || x + w > LCD_WIDTH || y + h > LCD_HEIGHT {
+    if w == 0
+        || h == 0
+        || u32::from(x) + u32::from(w) > u32::from(LCD_WIDTH)
+        || u32::from(y) + u32::from(h) > u32::from(LCD_HEIGHT)
+    {
         return Err(Error::InvalidArgument(format!(
             "region {w}x{h}+{x}+{y} does not fit the {LCD_WIDTH}x{LCD_HEIGHT} lcd segment"
         )));
@@ -320,19 +326,22 @@ mod tests {
     }
 
     #[test]
-    fn ring_mapping_matches_the_reference_implementations() {
-        // Hardware segment h of encoder e sits at led (1-e)*4 + h and shows
-        // at visual position (h + rotation[e]) % 4. Inverted here: walking
-        // the visual ring of the left encoder (rotation 3) must visit
-        // hardware leds 5,6,7,4; the right encoder (rotation 1) 3,0,1,2.
+    fn ring_mapping_matches_observed_hardware() {
+        // Validated visually on firmware 3.05.003: walking each visual
+        // ring clockwise from the top must visit these hardware leds.
         let left: Vec<u8> = (0..4)
             .map(|v| encoder_ring_led_index(0, v).unwrap())
             .collect();
         let right: Vec<u8> = (0..4)
             .map(|v| encoder_ring_led_index(1, v).unwrap())
             .collect();
-        assert_eq!(left, vec![5, 6, 7, 4]);
-        assert_eq!(right, vec![3, 0, 1, 2]);
+        assert_eq!(left, vec![5, 4, 7, 6]);
+        assert_eq!(right, vec![3, 2, 1, 0]);
+
+        // Together the two rings must cover all 8 leds exactly once.
+        let mut all: Vec<u8> = left.iter().chain(right.iter()).copied().collect();
+        all.sort_unstable();
+        assert_eq!(all, (0..8).collect::<Vec<u8>>());
 
         assert!(encoder_ring_led_index(2, 0).is_err());
         assert!(encoder_ring_led_index(0, 4).is_err());
@@ -407,6 +416,9 @@ mod tests {
         assert!(lcd_region_reports(700, 0, 100, 50, &jpeg).is_err());
         assert!(lcd_region_reports(0, 380, 10, 10, &jpeg).is_err());
         assert!(lcd_region_reports(0, 0, 0, 10, &jpeg).is_err());
+        // Near-u16::MAX coordinates must error, not overflow the check.
+        assert!(lcd_region_reports(65500, 0, 100, 50, &jpeg).is_err());
+        assert!(lcd_region_reports(0, 65500, 10, 100, &jpeg).is_err());
         lcd_region_reports(0, 0, 720, 384, &jpeg).unwrap();
     }
 

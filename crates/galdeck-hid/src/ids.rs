@@ -28,10 +28,26 @@ pub const LCD_WIDTH: u16 = 720;
 pub const LCD_HEIGHT: u16 = 384;
 
 /// The module leaves software mode if it misses keepalives; senders use
-/// this interval. (The exact device-side timeout is uncharacterized.)
+/// this interval. (The exact device-side timeout is uncharacterized —
+/// observed on firmware 3.05.003: a 12 s gap still left commands working,
+/// but the module had dropped out of software mode somewhere within it.)
 pub const KEEPALIVE_INTERVAL: Duration = Duration::from_millis(500);
 /// The device needs a moment after open before it accepts traffic.
 pub const SETTLE_DELAY: Duration = Duration::from_millis(200);
+/// Entering software mode (the first keepalive, or one after a long gap)
+/// makes the firmware assert its own state — observed on 3.05.003 as all
+/// encoder-ring LEDs turning white — wiping anything drawn during the
+/// transition. Wait this long after a mode-entering keepalive before
+/// drawing.
+pub const SOFTWARE_MODE_ENTRY_SETTLE: Duration = Duration::from_millis(1000);
+/// A keepalive gap longer than this is treated as having let the module
+/// drop out of software mode (the true timeout is somewhere between the
+/// 500 ms cadence and the 12 s observed above).
+pub const SOFTWARE_MODE_REENTRY_GAP: Duration = Duration::from_millis(2000);
+/// Minimum spacing between consecutive feature reports. Bursts of feature
+/// reports misbehave (observed on firmware 3.05.003: rapid ring-LED writes
+/// all take the final color); the reference implementation spaces them too.
+pub const FEATURE_REPORT_SPACING: Duration = Duration::from_millis(2);
 
 /// Feature reports are 32 bytes including the report id, zero padded.
 pub const FEATURE_REPORT_LEN: usize = 32;
@@ -40,5 +56,7 @@ pub const OUTPUT_REPORT_LEN: usize = 1024;
 /// Input reports arrive on a 512-byte endpoint.
 pub const INPUT_REPORT_LEN: usize = 512;
 
-/// Firmware version everything public has been validated against.
-pub const VALIDATED_FIRMWARE: &str = "3.06.005";
+/// Firmware versions this protocol implementation is validated against:
+/// 3.06.005 by the upstream reference implementations, 3.05.003 by this
+/// project on physical hardware (2026-09-03).
+pub const VALIDATED_FIRMWARES: &[&str] = &["3.05.003", "3.06.005"];

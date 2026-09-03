@@ -42,14 +42,20 @@ pub fn serve(listener: UnixListener, control_tx: Sender<ControlMsg>) {
                 });
             }
             Err(e) => {
+                // A transient accept error (EMFILE, ECONNABORTED) must not
+                // permanently kill the control socket.
                 log::warn!("accept failed: {e}");
-                return;
+                std::thread::sleep(Duration::from_millis(100));
             }
         }
     }
 }
 
+const CLIENT_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
+
 fn handle_client(stream: UnixStream, control_tx: Sender<ControlMsg>) -> Result<()> {
+    // Don't let an idle client pin its handler thread forever.
+    stream.set_read_timeout(Some(CLIENT_IDLE_TIMEOUT))?;
     let mut writer = stream.try_clone()?;
     let reader = BufReader::new(stream);
 

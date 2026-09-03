@@ -41,8 +41,19 @@ pub enum Event {
 pub struct Galleon {
     device: HidDevice,
     last_keepalive: Instant,
+    /// False for passive handles ([`Galleon::open_passive`]): no keepalive
+    /// is ever sent, so the module is left in whatever mode it was in.
+    keepalive_enabled: bool,
+    /// Set when a keepalive followed a gap long enough that the module had
+    /// dropped out of software mode; see [`Galleon::take_mode_reentry`].
+    mode_reentered: bool,
     key_states: [bool; KEY_COUNT as usize],
     encoder_states: [bool; ENCODER_COUNT as usize],
+}
+
+fn to_cpath(path: &str) -> Result<std::ffi::CString, Error> {
+    std::ffi::CString::new(path)
+        .map_err(|_| Error::InvalidArgument(format!("bad device path {path:?}")))
 }
 
 fn is_galleon_control_interface(info: &DeviceInfo) -> bool {
@@ -61,52 +72,94 @@ impl Galleon {
             .collect()
     }
 
-    /// Open the first connected module.
+    /// Open the first connected module and switch it into software mode.
     pub fn open(api: &HidApi) -> Result<Self, Error> {
         let info = api
             .device_list()
             .find(|info| is_galleon_control_interface(info))
             .ok_or(Error::DeviceNotFound)?;
-        Self::open_device(info.open_device(api)?)
+        Self::open_device(info.open_device(api)?, false)
     }
 
     /// Open a specific module by hidraw path (as returned by [`Galleon::list`]).
     pub fn open_path(api: &HidApi, path: &str) -> Result<Self, Error> {
-        let cpath = std::ffi::CString::new(path)
-            .map_err(|_| Error::InvalidArgument(format!("bad device path {path:?}")))?;
-        Self::open_device(api.open_path(&cpath)?)
+        Self::open_device(api.open_path(&to_cpath(path)?)?, false)
     }
 
-    fn open_device(device: HidDevice) -> Result<Self, Error> {
+    /// Open a module without sending any keepalive: the module stays in
+    /// whatever mode it is in (normally hardware mode). Identity getters
+    /// ([`Galleon::firmware_version`], [`Galleon::serial_number`]) work on
+    /// a passive handle; drawing commands are pointless outside software
+    /// mode.
+    pub fn open_passive(api: &HidApi, path: &str) -> Result<Self, Error> {
+        Self::open_device(api.open_path(&to_cpath(path)?)?, true)
+    }
+
+    fn open_device(device: HidDevice, passive: bool) -> Result<Self, Error> {
         // The device needs a moment after open before it accepts traffic.
         std::thread::sleep(SETTLE_DELAY);
 
         let mut galleon = Galleon {
             device,
             last_keepalive: Instant::now(),
+            keepalive_enabled: !passive,
+            mode_reentered: false,
             key_states: [false; KEY_COUNT as usize],
             encoder_states: [false; ENCODER_COUNT as usize],
         };
-        // The first keepalive is what switches the module into software mode.
-        galleon.send_keepalive()?;
+        if !passive {
+            // The first keepalive switches the module into software mode;
+            // give the mode transition time to finish, or the firmware's
+            // own entry state (e.g. white ring LEDs) wipes what we draw.
+            galleon.send_keepalive()?;
+            std::thread::sleep(SOFTWARE_MODE_ENTRY_SETTLE);
+        }
         Ok(galleon)
     }
 
-    /// Send the keepalive immediately, regardless of the interval.
-    pub fn send_keepalive(&mut self) -> Result<(), Error> {
-        self.device
-            .send_feature_report(&protocol::keepalive_report())?;
-        self.last_keepalive = Instant::now();
+    /// All feature reports go through here: the device mishandles bursts of
+    /// feature reports (observed on firmware 3.05.003: rapid 03 24 ring-LED
+    /// writes all end up showing the last color), so consecutive sends are
+    /// spaced by a moment — the reference implementation does the same.
+    fn send_feature(&mut self, report: &[u8]) -> Result<(), Error> {
+        self.device.send_feature_report(report)?;
+        std::thread::sleep(FEATURE_REPORT_SPACING);
         Ok(())
     }
 
-    /// Send the keepalive if the interval has elapsed. Call this at least
-    /// every 500 ms when not using [`Galleon::poll`].
+    /// Send the keepalive immediately, regardless of the interval. If the
+    /// gap since the previous keepalive was long enough for the module to
+    /// have dropped out of software mode, this waits out the re-entry
+    /// transition and records it (see [`Galleon::take_mode_reentry`]).
+    pub fn send_keepalive(&mut self) -> Result<(), Error> {
+        let reentry = self.last_keepalive.elapsed() >= SOFTWARE_MODE_REENTRY_GAP;
+        self.send_feature(&protocol::keepalive_report())?;
+        self.last_keepalive = Instant::now();
+        if reentry {
+            std::thread::sleep(SOFTWARE_MODE_ENTRY_SETTLE);
+            self.mode_reentered = true;
+        }
+        Ok(())
+    }
+
+    /// Send the keepalive if the interval has elapsed. Called internally by
+    /// every drawing command and by [`Galleon::poll`], so the 500 ms
+    /// cadence is maintained even during long upload sequences; call it
+    /// yourself only around long stretches of your own non-device work.
+    /// No-op on passive handles.
     pub fn tick_keepalive(&mut self) -> Result<(), Error> {
-        if self.last_keepalive.elapsed() >= KEEPALIVE_INTERVAL {
+        if self.keepalive_enabled && self.last_keepalive.elapsed() >= KEEPALIVE_INTERVAL {
             self.send_keepalive()?;
         }
         Ok(())
+    }
+
+    /// True once, after a keepalive followed a gap long enough that the
+    /// module re-entered software mode. On re-entry the firmware asserts
+    /// its own state (observed: ring LEDs turn white), so redraw
+    /// everything when this fires.
+    pub fn take_mode_reentry(&mut self) -> bool {
+        std::mem::take(&mut self.mode_reentered)
     }
 
     /// Wait up to `timeout` for input events, refreshing the keepalive
@@ -179,21 +232,22 @@ impl Galleon {
 
     /// Panel brightness, 0-100.
     pub fn set_brightness(&mut self, percent: u8) -> Result<(), Error> {
-        self.device
-            .send_feature_report(&protocol::brightness_report(percent)?)?;
+        self.tick_keepalive()?;
+        self.send_feature(&protocol::brightness_report(percent)?)?;
         Ok(())
     }
 
     /// Fill one key (0-11, row-major) with a solid color.
     pub fn fill_key_color(&mut self, key: u8, r: u8, g: u8, b: u8) -> Result<(), Error> {
-        self.device
-            .send_feature_report(&protocol::key_color_report(key, r, g, b)?)?;
+        self.tick_keepalive()?;
+        self.send_feature(&protocol::key_color_report(key, r, g, b)?)?;
         Ok(())
     }
 
     /// Upload a 160x160 JPEG to one key.
     pub fn set_key_jpeg(&mut self, key: u8, jpeg: &[u8]) -> Result<(), Error> {
         for report in protocol::key_image_reports(key, jpeg)? {
+            self.tick_keepalive()?;
             self.device.write(&report)?;
         }
         Ok(())
@@ -209,6 +263,7 @@ impl Galleon {
         jpeg: &[u8],
     ) -> Result<(), Error> {
         for report in protocol::lcd_region_reports(x, y, w, h, jpeg)? {
+            self.tick_keepalive()?;
             self.device.write(&report)?;
         }
         Ok(())
@@ -224,8 +279,8 @@ impl Galleon {
         b: u8,
     ) -> Result<(), Error> {
         let led = protocol::encoder_ring_led_index(encoder, visual_segment)?;
-        self.device
-            .send_feature_report(&protocol::encoder_led_report(led, r, g, b)?)?;
+        self.tick_keepalive()?;
+        self.send_feature(&protocol::encoder_led_report(led, r, g, b)?)?;
         Ok(())
     }
 
@@ -254,9 +309,15 @@ impl Galleon {
         Ok(())
     }
 
+    /// Send a raw feature report as-is. Escape hatch for protocol probing
+    /// (e.g. the `verify --ring-probe` harness); not needed in normal use.
+    pub fn send_feature_report_raw(&mut self, report: &[u8]) -> Result<(), Error> {
+        self.send_feature(report)
+    }
+
     /// Reset the module to its built-in logo screen.
     pub fn reset_to_logo(&mut self) -> Result<(), Error> {
-        self.device.send_feature_report(&protocol::reset_report())?;
+        self.send_feature(&protocol::reset_report())?;
         Ok(())
     }
 

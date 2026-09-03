@@ -18,6 +18,8 @@ use crate::render;
 
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(2);
 const DEFAULT_KEY_COLOR: [u8; 3] = [24, 26, 32];
+/// Cap on commands spawned for one coalesced rotation report.
+const MAX_DETENTS_PER_EVENT: u32 = 8;
 
 /// A control request paired with its reply channel.
 pub struct ControlMsg {
@@ -78,14 +80,16 @@ impl Engine {
                 }
             }
 
-            match self
-                .device
-                .as_mut()
-                .unwrap()
-                .deck
-                .poll(Duration::from_millis(200))
-            {
+            let state = self.device.as_mut().unwrap();
+            match state.deck.poll(Duration::from_millis(200)) {
                 Ok(events) => {
+                    // A keepalive gap (suspend, long stall) means the module
+                    // re-entered software mode and the firmware wiped our
+                    // state — redraw the page.
+                    if state.deck.take_mode_reentry() {
+                        log::info!("module re-entered software mode, re-applying page");
+                        self.apply_page();
+                    }
                     for event in events {
                         self.handle_event(event);
                     }
@@ -126,10 +130,10 @@ impl Engine {
                 let firmware = deck.firmware_version().unwrap_or_else(|_| "unknown".into());
                 let serial = deck.serial_number().unwrap_or_else(|_| "unknown".into());
                 log::info!("connected: firmware {firmware}, serial {serial}");
-                if firmware != galdeck_hid::ids::VALIDATED_FIRMWARE {
+                if !galdeck_hid::ids::VALIDATED_FIRMWARES.contains(&firmware.as_str()) {
                     log::warn!(
-                        "firmware {firmware} differs from validated {} — if the module drops out of software mode, the keepalive may have changed on this firmware; please report it",
-                        galdeck_hid::ids::VALIDATED_FIRMWARE
+                        "firmware {firmware} differs from the validated versions {:?} — if the module drops out of software mode, the keepalive may have changed on this firmware; please report it",
+                        galdeck_hid::ids::VALIDATED_FIRMWARES
                     );
                 }
                 self.device = Some(DeviceState {
@@ -271,7 +275,14 @@ impl Engine {
                     cfg.and_then(|e| e.ccw.clone())
                 };
                 if let Some(cmd) = cmd {
-                    spawn_action(&cmd);
+                    // Fast turns coalesce into one report with |delta| > 1;
+                    // run the command once per detent (capped) so spins
+                    // aren't silently dropped. GALDECK_DELTA carries the
+                    // signed total for scripts that prefer one scaled step.
+                    let detents = (delta.unsigned_abs() as u32).min(MAX_DETENTS_PER_EVENT);
+                    for _ in 0..detents {
+                        spawn_action_with_delta(&cmd, delta);
+                    }
                 }
             }
             _ => {}
@@ -367,8 +378,23 @@ impl Engine {
 
 /// Run a shell command without blocking the engine; a helper thread reaps it.
 fn spawn_action(cmd: &str) {
+    spawn_action_inner(cmd, None);
+}
+
+/// Like [`spawn_action`], exporting the signed rotation delta as
+/// `GALDECK_DELTA` for scripts that want one scaled step per event.
+fn spawn_action_with_delta(cmd: &str, delta: i8) {
+    spawn_action_inner(cmd, Some(delta));
+}
+
+fn spawn_action_inner(cmd: &str, delta: Option<i8>) {
     log::info!("exec: {cmd}");
-    match std::process::Command::new("sh").arg("-c").arg(cmd).spawn() {
+    let mut command = std::process::Command::new("sh");
+    command.arg("-c").arg(cmd);
+    if let Some(delta) = delta {
+        command.env("GALDECK_DELTA", delta.to_string());
+    }
+    match command.spawn() {
         Ok(mut child) => {
             std::thread::spawn(move || match child.wait() {
                 Ok(status) if !status.success() => log::warn!("action exited with {status}"),

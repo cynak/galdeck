@@ -32,7 +32,9 @@ thiserror = "2"
 anyhow = "1"
 log = "0.4"
 env_logger = "0.11"
-ctrlc = "3"
+# `termination` also catches SIGTERM (systemd's stop signal) so the daemon
+# can clear the device and remove its socket on `systemctl --user stop`.
+ctrlc = { version = "3", features = ["termination"] }
 
 [profile.release]
 lto = "thin"

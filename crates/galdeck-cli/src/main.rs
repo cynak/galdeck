@@ -69,13 +69,16 @@ fn detect() -> Result<()> {
     }
     for path in paths {
         println!("module at {path}");
-        match galdeck_hid::Galleon::open_path(&api, &path) {
+        // Passive open: no keepalive is sent, so the module is left in
+        // whatever mode it is in — detect really is read-only.
+        match galdeck_hid::Galleon::open_passive(&api, &path) {
             Ok(mut deck) => {
-                println!("  firmware: {}", deck.firmware_version()?);
+                let firmware = deck.firmware_version()?;
+                println!("  firmware: {firmware}");
                 println!("  serial:   {}", deck.serial_number()?);
-                let validated = galdeck_hid::ids::VALIDATED_FIRMWARE;
-                if deck.firmware_version()? != validated {
-                    println!("  note: protocol is only validated on firmware {validated}");
+                let validated = galdeck_hid::ids::VALIDATED_FIRMWARES;
+                if !validated.contains(&firmware.as_str()) {
+                    println!("  note: protocol is only validated on firmware {validated:?}");
                 }
             }
             Err(e) => println!("  open failed: {e}"),

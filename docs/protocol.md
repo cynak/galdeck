@@ -20,6 +20,7 @@ GPL/MPL sources; byte layouts are facts.
 
 | Firmware | Status |
 |---|---|
+| 3.05.003 | Everything below validated by this project on physical hardware (2026-09-03): all commands, image uploads, input events, getters. Quirks observed on this firmware are marked "observed" below. |
 | 3.06.005 | Everything below validated (multiple implementations) |
 | ≥ 3.06.006 | **Unverified** report that the keepalive changes to a `02 25`-prefixed report; nothing public implements it. If you have this firmware, please report your findings. |
 
@@ -80,9 +81,26 @@ imagery, no input reports). Sending feature report
 switches it into *software mode* and must be **repeated every 500 ms**; if
 keepalives stop, the module drops back to hardware mode. 500 ms is the
 empirically safe interval used by all implementations — the device-side
-timeout has not been characterized.
+timeout has not been characterized precisely (observed on 3.05.003: after
+a 12 s gap the module had dropped out of software mode, but commands kept
+working and the next keepalive re-entered it).
 
 After opening the device, wait ~200 ms before the first traffic.
+
+**Software-mode entry transition (observed on 3.05.003):** when a
+keepalive *enters* software mode — the first one after open, or the first
+after a long gap — the firmware asserts its own state as part of the
+transition: all encoder-ring LEDs turn white, wiping any `03 24` writes
+made during or shortly before the transition. LED state written earlier
+survives a drop *out* of software mode and is only wiped by the next
+*entry*. Allow ~1 s after a mode-entering keepalive before drawing, and
+redraw ring state after any re-entry.
+
+**Feature-report bursts (observed on 3.05.003):** consecutive feature
+reports sent back-to-back misbehave — a rapid burst of eight `03 24`
+ring-LED writes left all segments showing the final color, while the same
+writes spaced out worked correctly. Space consecutive feature reports by
+at least ~1-2 ms (the reference implementation does the same).
 
 ## Feature commands (report id 0x03, 32 bytes, zero-padded)
 
@@ -97,11 +115,19 @@ After opening the device, wait ~200 ms before the first traffic.
 ### Encoder ring LEDs (Corsair delta 3)
 
 The 8 ring LEDs live in one index space: **encoder 0 (left) owns pixels
-4–7, encoder 1 (right) owns pixels 0–3** — i.e. `index = (1 − encoder) × 4 +
-hardware_segment`. Within each ring the hardware order is rotated relative
-to the visual ring; hardware segment `h` appears at visual position
-`(h + rotation) mod 4` with `rotation = 3` for encoder 0 and `1` for
-encoder 1 (visual position 0 = top, clockwise).
+4–7, encoder 1 (right) owns pixels 0–3**. Within each ring the hardware
+index order runs **counter-clockwise**, with a different start offset per
+ring. Validated visually on firmware 3.05.003 — walking each ring
+clockwise from its top segment visits these hardware indices:
+
+| Visual position (clockwise from top) | top | right | bottom | left |
+|---|---|---|---|---|
+| Encoder 0 (left ring) | 5 | 4 | 7 | 6 |
+| Encoder 1 (right ring) | 3 | 2 | 1 | 0 |
+
+(The reference implementations describe per-ring rotation offsets of 3 and
+1 with the same top segments but the opposite direction; if your firmware
+shows the pattern mirrored, please report it with the firmware version.)
 
 ## Image uploads (output report 0x02, 1024 bytes)
 
@@ -181,9 +207,15 @@ Defined by the Gen2 protocol family; the Galleon has no NFC reader.
 - **Serial number**: get feature report `0x06` (32 bytes). Byte 1 is a
   length `n`; the ASCII serial occupies bytes 2 to `n + 2`.
 
+Both getters work in hardware mode too (observed on 3.05.003) — no
+keepalive needed to read the module's identity.
+
 ## Uncharacterized
 
-- Exact keepalive timeout (how many missed intervals before hardware mode).
+- Exact keepalive timeout — bounded between 500 ms and 12 s on 3.05.003,
+  not pinned down further.
+- Exact duration of the software-mode entry transition (~1 s is safe on
+  3.05.003).
 - The alleged `02 25` keepalive on firmware ≥ 3.06.006.
 - Behavior and framing of image commands `08`, `09`, `0b` on this module.
 - Roles of interfaces 1–3 on `2b18` beyond keyboard/consumer/lighting

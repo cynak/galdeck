@@ -40,9 +40,9 @@ sudo udevadm control --reload && sudo udevadm trigger
 cargo run -p galdeck-cli -- detect
 ```
 
-`detect` prints the module's firmware version and serial without changing
-any state. **Record the firmware version in captures/ and in any issue you
-open.**
+`detect` opens the module passively (no keepalive is sent, so it stays in
+hardware mode) and prints its firmware version and serial. **Record the
+firmware version in captures/ and in any issue you open.**
 
 ## 4. Full protocol checkout
 

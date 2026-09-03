@@ -11,13 +11,15 @@ required — this is why the module appears dead without a driver), renders
 your configured pages onto the 12 LCD keys and the info screen, lights the
 encoder rings, and runs your commands on key presses and encoder turns.
 
-**Status: pre-hardware-verification.** The protocol implementation is
-complete and unit-tested against three mutually consistent public
-references, but this codebase has not yet been run against a physical unit.
-The first run of the [verify harness](docs/device-recon.md) will change
-that. Validated firmware: 3.06.005 (see the
-[firmware matrix](docs/protocol.md#firmware-validation-matrix) — **don't
-update your firmware yet**).
+**Status: verified on real hardware.** All protocol surfaces — key JPEG
+uploads, LCD region drawing, encoder ring LEDs, brightness, input events,
+and the keepalive — pass the [verify harness](docs/device-recon.md) on a
+physical Galleon 100 SD running firmware 3.05.003 (2026-09-03; 3.06.005
+is validated upstream). Two firmware quirks were discovered and are
+handled by the driver: see the
+[firmware matrix](docs/protocol.md#firmware-validation-matrix). **Don't
+update your module firmware** — newer firmware allegedly changes the
+keepalive and nothing public implements it yet.
 
 Not affiliated with or endorsed by Corsair or Elgato. "Stream Deck" and
 "Galleon" are their trademarks.
