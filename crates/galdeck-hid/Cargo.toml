@@ -1,0 +1,23 @@
+[package]
+name = "galdeck-hid"
+description = "Linux userspace driver library for the Stream Deck module built into the Corsair Galleon 100 SD keyboard"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+default = ["encode"]
+# JPEG encoding helpers (set_key_rgb / set_lcd_region_rgb)
+encode = ["dep:image"]
+
+[dependencies]
+hidapi = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+image = { workspace = true, optional = true }
+
+[dev-dependencies]
+image = { workspace = true }

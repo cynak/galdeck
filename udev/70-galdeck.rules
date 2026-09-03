@@ -1,0 +1,14 @@
+# galdeck: user access to the Corsair Galleon 100 SD's built-in Stream Deck
+# module (1b1c:2b18). Scoped uaccess (login-session users only) — deliberately
+# NOT the world-writable MODE="0666" all-Corsair rule that circulates online.
+#
+# Install:  sudo cp udev/70-galdeck.rules /etc/udev/rules.d/
+#           sudo udevadm control --reload && sudo udevadm trigger
+# Then unplug/replug the keyboard.
+
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1b1c", ATTRS{idProduct}=="2b18", TAG+="uaccess"
+
+# Optional: the keyboard half (1b1c:2b0c). Not used by galdeck itself, but
+# lets Corsair's browser-based Web Hub (WebHID) configure keyboard settings
+# on Linux. Uncomment if you want that.
+#SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1b1c", ATTRS{idProduct}=="2b0c", TAG+="uaccess"
