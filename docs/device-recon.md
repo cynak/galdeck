@@ -37,7 +37,7 @@ sudo hid-decode /dev/hidrawX   # repeat for each node of the 2b18 device
 sudo cp udev/70-galdeck.rules /etc/udev/rules.d/
 sudo udevadm control --reload && sudo udevadm trigger
 # replug the keyboard, then:
-cargo run -p galdeck-cli -- detect
+cargo run --example detect
 ```
 
 `detect` opens the module passively (no keepalive is sent, so it stays in
@@ -47,8 +47,8 @@ firmware version in captures/ and in any issue you open.**
 ## 4. Full protocol checkout
 
 ```sh
-cargo run -p galdeck-hid --example verify           # ~1 minute, interactive
-cargo run -p galdeck-hid --example verify -- --soak # + 6-minute keepalive soak
+cargo run --example verify           # ~1 minute, interactive
+cargo run --example verify -- --soak # + 6-minute keepalive soak
 ```
 
 If `verify` passes on your firmware, please report it (firmware version +

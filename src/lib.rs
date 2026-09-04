@@ -18,7 +18,7 @@
 //! | Knobs | [`Encoders`] / [`Encoder`] / [`Ring`] | 2 push-click encoders, 4 RGB LEDs each |
 //!
 //! ```no_run
-//! use galdeck_hid::{Align, Event, Galleon, Rgb, TextStyle};
+//! use galdeck::{Align, Event, Galleon, Rgb, TextStyle};
 //! use std::time::Duration;
 //!
 //! let api = hidapi::HidApi::new()?;
@@ -31,7 +31,7 @@
 //! let mut canvas = deck.button(1)?.canvas();
 //! canvas.fill(Rgb::new(20, 20, 28));
 //! canvas.draw_line((10, 150), (150, 10), Rgb::GREEN);
-//! if let Some(font) = galdeck_hid::Font::system() {
+//! if let Some(font) = galdeck::Font::system() {
 //!     let style = TextStyle::new(&font, 28.0).align(Align::Center);
 //!     canvas.draw_text("Ready", 80, 130, &style);
 //! }

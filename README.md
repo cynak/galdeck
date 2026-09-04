@@ -1,86 +1,64 @@
 # galdeck
 
-Linux support for the **Elgato Stream Deck module built into the Corsair
-Galleon 100 SD keyboard** — a hardware framework you can build on, plus a
-config-driven daemon and CLI that use it. No kernel module, no root
-daemon, no official software required.
+A Linux **hardware framework** for the Elgato Stream Deck module built into
+the **Corsair Galleon 100 SD** keyboard (USB `1b1c:2b18`).
 
-On Windows/macOS the module is driven by Elgato's Stream Deck app; on Linux
-it sits inert in "hardware mode". galdeck implements the host side of the
-protocol: it holds the module in software mode (a 500 ms keepalive is
-required — this is why the module appears dead without a driver), renders
-your configured pages onto the 12 LCD keys and the info screen, lights the
-encoder rings, and runs your commands on key presses and encoder turns.
+On Windows and macOS the module is driven by Elgato's Stream Deck app; on
+Linux it sits inert in "hardware mode", because it only accepts drawing
+while a host keeps it awake. galdeck implements that host side and hands
+you the controls: 12 LCD keys, a 720×384 info screen, and two push-click
+encoders with RGB rings.
 
-**Status: verified on real hardware.** All protocol surfaces — key JPEG
-uploads, LCD region drawing, encoder ring LEDs, brightness, input events,
-and the keepalive — pass the [verify harness](docs/device-recon.md) on a
-physical Galleon 100 SD running firmware 3.05.003 (2026-09-03; 3.06.005
-is validated upstream). Two firmware quirks were discovered and are
-handled by the driver: see the
+This crate owns the hardware layer and nothing above it. What to draw — key
+mappings, widgets, themes, animations — belongs to whatever you build on
+top. Userspace only: no kernel module, no root, no vendor software.
+
+**Status: verified on real hardware.** Every control passes the
+[verify harness](docs/device-recon.md) on a physical Galleon 100 SD running
+firmware 3.05.003 (3.06.005 is validated upstream). Three firmware quirks
+were found and are handled; see the
 [firmware matrix](docs/protocol.md#firmware-validation-matrix). **Don't
-update your module firmware** — newer firmware allegedly changes the
+update your module firmware** — newer firmware reportedly changes the
 keepalive and nothing public implements it yet.
 
 Not affiliated with or endorsed by Corsair or Elgato. "Stream Deck" and
 "Galleon" are their trademarks.
 
-## Layers
+## Controls
 
-galdeck is a **hardware framework** with a reference consumer on top. The
-split is deliberate: the framework owns the device and nothing about your
-workflow, so anyone can build their own experience on it.
-
-```
-   your project  ─ mappings, widgets, themes, animations
-        │  uses as a library
-   galdeck-hid   ─ Buttons · Lcd · Encoders · Canvas · events   ← the framework
-        │  hidraw
-   Galleon 100 SD Stream Deck module (1b1c:2b18)
-```
-
-| Piece | What it does |
-|---|---|
-| [`crates/galdeck-hid`](crates/galdeck-hid) | **The framework.** Component handles for each control, a drawing canvas, colors, fonts, an event stream, and the keepalive that keeps the module awake. Plus `examples/verify.rs`, the hardware checkout harness. |
-| [`crates/galdeck-daemon`](crates/galdeck-daemon) | A reference consumer: TOML profiles with pages, key labels/icons/colors, shell actions, encoder bindings with ring turn feedback; auto-reconnect; control socket. |
-| [`crates/galdeck-cli`](crates/galdeck-cli) | `galdeck` command: `detect`, `status`, `brightness`, `page`, `reload`, `ping`. |
-| [`docs/protocol.md`](docs/protocol.md) | Independent protocol documentation (CC-BY 4.0). |
-| [`udev/`](udev), [`systemd/`](systemd) | Scoped udev rule (uaccess, not world-writable) and a user service unit. |
-
-### Using the framework
-
-Each control is its own handle, borrowed from the open device:
+Open the device, then borrow the control you want:
 
 | Control | Handle | Hardware |
 |---|---|---|
-| Keys | `Buttons` / `Button` | 12 keys, 3x4, each a 160x160 display |
-| Info screen | `Lcd` | one 720x384 drawable region |
+| Keys | `Buttons` / `Button` | 12 keys, 3×4, each a 160×160 display |
+| Info screen | `Lcd` | one 720×384 drawable region |
 | Knobs | `Encoders` / `Encoder` / `Ring` | 2 push-click encoders, 4 addressable RGB LEDs each |
 
 ```rust
-use galdeck_hid::{Align, Event, Galleon, Rgb, TextStyle};
+use galdeck::{Align, Event, Galleon, Rgb, TextStyle};
 use std::time::Duration;
 
-let api = hidapi::HidApi::new()?;
+let api = galdeck::hidapi::HidApi::new()?;
 let mut deck = Galleon::open(&api)?;
 deck.set_brightness(70)?;
 
-// A solid key is one cheap feature report; an image is a canvas upload.
+// A solid key costs one feature report; an image is a canvas upload.
 deck.button(0)?.set_color(Rgb::from_hex("#1d3b53").unwrap())?;
 
-let mut canvas = deck.button(1)?.canvas();      // blank 160x160
+let mut canvas = deck.button(1)?.canvas();   // blank 160x160
 canvas.fill(Rgb::new(20, 20, 28));
 canvas.draw_line((10, 150), (150, 10), Rgb::GREEN);
 canvas.fill_circle((80, 60), 24, Rgb::RED);
-if let Some(font) = galdeck_hid::Font::system() {
+if let Some(font) = galdeck::Font::system() {
     canvas.draw_text("Ready", 80, 130, &TextStyle::new(&font, 28.0).align(Align::Center));
 }
 deck.button(1)?.draw(&canvas)?;
 
-// Rings address segments clockwise from the top, whatever the hardware order.
+// Ring segments are numbered clockwise from the top, whatever the
+// hardware's internal order.
 deck.encoder(0)?.ring().set_level(0.5, Rgb::GREEN, Rgb::BLACK)?;
 
-// Partial screen updates are much cheaper than full redraws.
+// Partial screen updates are far cheaper than full redraws.
 deck.lcd().draw_at(20, 20, &canvas)?;
 
 for event in deck.poll(Duration::from_secs(5))? {
@@ -92,95 +70,86 @@ for event in deck.poll(Duration::from_secs(5))? {
 }
 ```
 
-The module only accepts drawing while in *software mode*, which it leaves
-without a keepalive roughly twice a second. Every drawing call and `poll`
-refreshes that for you; after a long gap, `take_mode_reentry()` tells you
-the firmware reset its own state and your content needs redrawing. Run
-`cargo doc -p galdeck-hid --open` for the full API.
+`cargo doc --open` has the full API.
 
-## Quick start
+## Getting started
 
 ```sh
-# 1. build (needs libudev headers: apt install libudev-dev / pacman -S systemd)
-cargo build --release
-
-# 2. device access
+# device access (build needs libudev headers: apt install libudev-dev)
 sudo cp udev/70-galdeck.rules /etc/udev/rules.d/
 sudo udevadm control --reload && sudo udevadm trigger
-# replug the keyboard
+# replug the keyboard, then:
 
-# 3. first contact — read-only, prints firmware + serial
-cargo run -p galdeck-cli -- detect
-
-# 4. full protocol checkout on real hardware (see docs/device-recon.md first)
-cargo run -p galdeck-hid --example verify
-
-# 5. daily use
-mkdir -p ~/.config/galdeck && cp config/galdeck.example.toml ~/.config/galdeck/config.toml
-cargo install --path crates/galdeck-daemon
-cargo install --path crates/galdeck-cli
-mkdir -p ~/.config/systemd/user && cp systemd/galdeck.service ~/.config/systemd/user/
-systemctl --user daemon-reload && systemctl --user enable --now galdeck
-galdeck status
+cargo run --example detect   # read-only: is it there, what firmware?
+cargo run --example verify   # full checkout of every control, ~1 minute
 ```
 
-Configuration lives in `~/.config/galdeck/config.toml` — see the commented
-[example](config/galdeck.example.toml). `galdeck reload` applies edits live.
+Add it to your project with `galdeck = "0.1"`.
 
-Notes on running as a service:
+## Things worth knowing
 
-- Apps you launch from a key are children of the daemon, so the unit sets
-  `KillMode=process`; without it, `systemctl --user restart galdeck` would
-  close the windows you opened from the deck. Their memory still counts
-  toward the service in `systemctl status` — cosmetic, not a leak.
-- GUI actions need the systemd user manager to know your graphical
-  session (`systemctl --user show-environment` should list `WAYLAND_DISPLAY`
-  or `DISPLAY`). GNOME and KDE do this for you.
-- Logs: `journalctl --user -u galdeck -f`. Set `RUST_LOG=debug` in the unit
-  for per-event tracing.
+- **Software mode.** The module ignores drawing unless it receives a
+  keepalive roughly twice a second — that is why it looks dead without a
+  driver. Every drawing call and `poll` refreshes it for you. After a long
+  gap the firmware resets its own state; `take_mode_reentry()` tells you to
+  redraw.
+- **Partial screen updates.** `Lcd::draw_at` uploads only the rectangle you
+  changed.
+- **Feature-report pacing.** This firmware garbles bursts of feature
+  reports, so the framework spaces them.
+- **`encode` feature** (default): canvas JPEG encoding and image loading.
+  Without it the framework still drives LEDs and uploads pre-encoded JPEGs.
+
+## Built on galdeck
+
+- **[galdeck-daemon](https://github.com/cynak/galdeck-daemon)** — the
+  reference consumer: TOML profiles with pages, key labels, icons, shell
+  actions, encoder bindings with ring feedback, and a control CLI. Worth a
+  read if you are building your own.
+
+Built something? Open a PR adding it here.
 
 ## Device background
 
 The Galleon 100 SD (CES 2026) replaces the numpad with a genuine Stream
-Deck: 12 LCD keys (160×160), two push-click encoders with RGB rings, and a
-720×384 host-drawable info screen. It enumerates behind an internal hub as
-`1b1c:2b18` — **Corsair's** vendor id, not Elgato's — which is the sole
-reason stock Stream Deck tooling ignores it. The protocol is Elgato's
-documented Gen2 protocol plus three Corsair deltas (keepalive, interface
-selection, ring LEDs); all details in [docs/protocol.md](docs/protocol.md).
+Deck. It enumerates behind an internal hub as `1b1c:2b18` — **Corsair's**
+vendor id, not Elgato's — which is the sole reason stock Stream Deck
+tooling ignores it. The protocol is Elgato's documented Gen2 protocol plus
+three Corsair deltas (keepalive, interface selection, ring LEDs), all
+written up in [docs/protocol.md](docs/protocol.md) under CC-BY 4.0 so any
+project can absorb it. The `protocol` module implements it as pure
+functions over byte buffers, useful if you are porting to another language
+or transport.
 
 The keyboard half (`1b1c:2b0c`) types fine out of the box via the kernel's
 generic HID driver and can be configured with Corsair's browser-based Web
 Hub (WebHID; see the commented-out rule in `udev/`). Native keyboard
-RGB/profile support is out of scope for now — see ckb-next issue #1264.
+RGB/profile support is out of scope — see ckb-next issue #1264.
 
 ## Relationship to other projects
 
 The protocol groundwork exists thanks to
 [Julusian/node-elgato-stream-deck] (MIT; first shipped Galleon support —
-the reference this library was ported from), Elgato's public Gen2 HID
-docs, and early community work (opendeck-galleon's notes,
-rust-elgato-streamdeck PR #63). galdeck exists to provide what none of
-those do on Linux: a daemon and tooling you can daily-drive, plus
-independently rewritten protocol docs under CC-BY that any project — GPL,
-MIT, or otherwise — can absorb. If upstream Stream Deck libraries grow
-Galleon support, great: this repo's protocol docs, captures, and
-verification harness still serve as the hardware-facts commons.
+the reference this was ported from), Elgato's public Gen2 HID docs, and
+early community work (opendeck-galleon's notes, rust-elgato-streamdeck
+PR #63). galdeck adds what none of those do on Linux: a framework to build
+on, independently rewritten protocol docs under CC-BY, and a hardware
+verification anyone can rerun.
 
 [Julusian/node-elgato-stream-deck]: https://github.com/Julusian/node-elgato-stream-deck
 
 ## Contributing
 
-Hardware reports are the most valuable contribution right now: run
-`cargo run -p galdeck-hid --example verify` and open an issue with your
-firmware version and the result — especially on firmware newer than
-3.06.005, where the keepalive may differ. Traffic captures for anything
-that misbehaves are gold.
+Hardware reports are the most valuable contribution right now — everything
+rests on one unit. Run `cargo run --example verify` and open an issue with
+your firmware version and result, especially on firmware newer than
+3.06.005 where the keepalive may differ.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide,
-[docs/device-recon.md](docs/device-recon.md) for capture recipes, and
+[docs/device-recon.md](docs/device-recon.md) for USB capture recipes, and
 [CHANGELOG.md](CHANGELOG.md) for what has changed.
 
 ## License
 
-Code: [MIT](LICENSE). Protocol documentation ([docs/protocol.md](docs/protocol.md)): CC-BY 4.0.
+Code: [MIT](LICENSE). Protocol documentation
+([docs/protocol.md](docs/protocol.md)): CC-BY 4.0.

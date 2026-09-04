@@ -3,11 +3,11 @@
 //! Run with the keyboard plugged in and the udev rule installed:
 //!
 //! ```sh
-//! cargo run -p galdeck-hid --example verify              # full checkout, ~1 min
-//! cargo run -p galdeck-hid --example verify -- --soak    # + 6-minute keepalive soak
-//! cargo run -p galdeck-hid --example verify -- --rings   # just the ring orientation card
-//! cargo run -p galdeck-hid --example verify -- --ring-probe   # raw LED index probe
-//! cargo run -p galdeck-hid --example verify -- --ring-hold    # keepalive/LED interaction
+//! cargo run --example verify              # full checkout, ~1 min
+//! cargo run --example verify -- --soak    # + 6-minute keepalive soak
+//! cargo run --example verify -- --rings   # just the ring orientation card
+//! cargo run --example verify -- --ring-probe   # raw LED index probe
+//! cargo run --example verify -- --ring-hold    # keepalive/LED interaction
 //! ```
 //!
 //! Exercises every control through the public framework API, then drops
@@ -16,8 +16,8 @@
 
 use std::time::{Duration, Instant};
 
-use galdeck_hid::ids::VALIDATED_FIRMWARES;
-use galdeck_hid::{Align, Button, Buttons, Canvas, Event, Font, Galleon, Rgb, TextStyle};
+use galdeck::ids::VALIDATED_FIRMWARES;
+use galdeck::{Align, Button, Buttons, Canvas, Event, Font, Galleon, Rgb, TextStyle};
 
 fn checkpoint(name: &str) {
     println!("==> {name}");
@@ -25,7 +25,7 @@ fn checkpoint(name: &str) {
 
 /// Wait while keeping the module in software mode (a bare sleep would let
 /// the keepalive lapse).
-fn hold(deck: &mut Galleon, duration: Duration) -> Result<(), galdeck_hid::Error> {
+fn hold(deck: &mut Galleon, duration: Duration) -> Result<(), galdeck::Error> {
     let start = Instant::now();
     while start.elapsed() < duration {
         deck.poll(Duration::from_millis(200))?;
@@ -98,10 +98,10 @@ fn rings_only(deck: &mut Galleon) -> Result<(), Box<dyn std::error::Error>> {
 /// `--ring-probe`: light raw hardware LED indices one at a time to
 /// characterize the `03 24` addressing on new firmware.
 fn ring_probe(deck: &mut Galleon) -> Result<(), Box<dyn std::error::Error>> {
-    use galdeck_hid::protocol;
+    use galdeck::protocol;
     checkpoint("ring LED probe — raw indices 0..7, red, 3s each");
     println!("    note per index: which ring lights, one segment or the whole ring, and where");
-    let clear_all = |deck: &mut Galleon| -> Result<(), galdeck_hid::Error> {
+    let clear_all = |deck: &mut Galleon| -> Result<(), galdeck::Error> {
         for index in 0..8u8 {
             deck.send_feature_report_raw(&protocol::encoder_led_report(index, 0, 0, 0)?)?;
         }
@@ -124,7 +124,7 @@ fn ring_probe(deck: &mut Galleon) -> Result<(), Box<dyn std::error::Error>> {
 fn ring_hold(deck: &mut Galleon) -> Result<(), Box<dyn std::error::Error>> {
     const PHASE: Duration = Duration::from_secs(12);
     let card = [Rgb::RED, Rgb::GREEN, Rgb::BLUE, Rgb::WHITE];
-    let set_pattern = |deck: &mut Galleon| -> Result<(), galdeck_hid::Error> {
+    let set_pattern = |deck: &mut Galleon| -> Result<(), galdeck::Error> {
         for index in 0..2u8 {
             deck.encoder(index)?.ring().set_segments(card)?;
         }

@@ -8,7 +8,7 @@ until 1.0 the framework API may change between minor versions.
 First public release, developed and validated against a physical Corsair
 Galleon 100 SD on firmware 3.05.003.
 
-### Framework (`galdeck-hid`)
+### Framework (`galdeck`)
 
 - Per-control handles: `Buttons`/`Button` (12 keys by index or grid
   position), `Lcd` (720x384 screen, full or partial region draws), and
@@ -25,16 +25,11 @@ Galleon 100 SD on firmware 3.05.003.
 - Public `protocol` module of pure report builders and parsers, for
   porting to other languages or transports.
 
-### Daemon and CLI
+### Not in this crate
 
-- TOML profiles with pages, key labels/icons/colors, shell actions, and
-  encoder bindings; live `reload`; auto-reconnect; Unix control socket.
-- Ring turn feedback: a detent steps a lit segment around the ring, a
-  click flashes it, both settling back to the page color.
-- Encoder actions run serialized per knob with a bounded queue, so fast
-  spins run in order without building a backlog.
-- `galdeck` CLI: `detect` (read-only, leaves the module in hardware mode),
-  `status`, `brightness`, `page`, `reload`, `ping`.
+The daemon, CLI, and their config live in
+[galdeck-daemon](https://github.com/cynak/galdeck-daemon): this repository
+is the hardware framework, and user experience belongs to consumers of it.
 
 ### Firmware quirks handled
 

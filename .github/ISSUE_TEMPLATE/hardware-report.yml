@@ -16,14 +16,14 @@ body:
     id: firmware
     attributes:
       label: Firmware version
-      description: "From `cargo run -p galdeck-cli -- detect` (read-only, safe)"
+      description: "From `cargo run --example detect` (read-only, safe)"
       placeholder: "3.05.003"
     validations:
       required: true
   - type: dropdown
     id: outcome
     attributes:
-      label: How did `cargo run -p galdeck-hid --example verify` go?
+      label: How did `cargo run --example verify` go?
       options:
         - Everything worked
         - Mostly worked, some steps wrong

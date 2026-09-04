@@ -1,44 +1,46 @@
-[workspace]
-resolver = "2"
-members = [
-    "crates/galdeck-hid",
-    "crates/galdeck-ipc",
-    "crates/galdeck-daemon",
-    "crates/galdeck-cli",
-]
-
-[workspace.package]
+[package]
+name = "galdeck"
+description = "Linux hardware framework for the Stream Deck module built into the Corsair Galleon 100 SD keyboard"
 version = "0.1.0"
 edition = "2021"
-# Verified with `cargo +1.88 check --workspace`; the CI msrv job holds it.
+# Verified with `cargo +1.88 check`; the CI msrv job holds it.
 rust-version = "1.88"
 license = "MIT"
 repository = "https://github.com/cynak/galdeck"
 homepage = "https://github.com/cynak/galdeck"
+documentation = "https://docs.rs/galdeck"
 authors = ["galdeck contributors"]
 keywords = ["streamdeck", "corsair", "galleon", "hid", "linux"]
 categories = ["hardware-support", "api-bindings"]
+readme = "README.md"
+exclude = ["captures/", ".github/"]
 
-[workspace.dependencies]
-galdeck-hid = { path = "crates/galdeck-hid" }
-galdeck-ipc = { path = "crates/galdeck-ipc" }
+[features]
+default = ["encode"]
+# Canvas encoding and image loading: Canvas::to_jpeg / load / load_scaled,
+# and the draw() methods on Button and Lcd that use them. Without it the
+# framework still drives LEDs and uploads pre-encoded JPEGs.
+encode = ["dep:image"]
 
+[dependencies]
 # hidraw backend ONLY: the libusb backend detaches kernel drivers, which is
 # dangerous on a device that is physically part of a keyboard.
-hidapi = { version = "2.6", default-features = false, features = ["linux-static-hidraw"] }
-image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+hidapi = { version = "2.6", default-features = false, features = [
+    "linux-static-hidraw",
+] }
 ab_glyph = "0.2"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-toml = "0.8"
-clap = { version = "4", features = ["derive"] }
 thiserror = "2"
-anyhow = "1"
 log = "0.4"
-env_logger = "0.11"
-# `termination` also catches SIGTERM (systemd's stop signal) so the daemon
-# can clear the device and remove its socket on `systemctl --user stop`.
-ctrlc = { version = "3", features = ["termination"] }
+image = { version = "0.25", default-features = false, features = [
+    "jpeg",
+    "png",
+], optional = true }
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = [
+    "jpeg",
+    "png",
+] }
 
 [profile.release]
 lto = "thin"

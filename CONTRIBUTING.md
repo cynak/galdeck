@@ -8,8 +8,8 @@ that is currently **one unit on firmware 3.05.003**. If you own a Galleon
 genuinely valuable — especially on a different firmware.
 
 ```sh
-cargo run -p galdeck-cli -- detect          # read-only: firmware + serial
-cargo run -p galdeck-hid --example verify   # full checkout, ~1 minute
+cargo run --example detect          # read-only: firmware + serial
+cargo run --example verify   # full checkout, ~1 minute
 ```
 
 Open an issue with your firmware version, distro, kernel, and what did or
@@ -29,15 +29,15 @@ Windows-VM-passthrough recipes, and commit traces under `captures/`.
 
 ```sh
 cargo fmt --all
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+cargo clippy --all-targets -- -D warnings
+cargo test
 ```
 
 All three must pass; CI runs them plus an MSRV check.
 
 Guidelines:
 
-- **Keep the layers apart.** `galdeck-hid` is a hardware framework: it
+- **Keep the layers apart.** `galdeck` is a hardware framework: it
   owns the device, drawing primitives, and events. Key mappings, widgets,
   themes, and animations belong to consumers — `galdeck-daemon` is one, and
   it should not need framework changes to add a feature that is really
