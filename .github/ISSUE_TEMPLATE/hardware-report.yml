@@ -1,0 +1,63 @@
+name: Hardware report
+description: Report how galdeck behaved on your Galleon 100 SD — especially on a firmware we have not seen
+title: "[hardware] firmware X.XX.XXX — "
+labels: ["hardware-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you — these reports are the most valuable contribution to this
+        project. Everything is currently validated on one unit, so yours
+        extends the firmware matrix whether it works or not.
+
+        Please **do not update your module firmware** to test: there is no
+        known downgrade path.
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware version
+      description: "From `cargo run -p galdeck-cli -- detect` (read-only, safe)"
+      placeholder: "3.05.003"
+    validations:
+      required: true
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: How did `cargo run -p galdeck-hid --example verify` go?
+      options:
+        - Everything worked
+        - Mostly worked, some steps wrong
+        - Failed early / device not detected
+        - Did not run it
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: What happened
+      description: |
+        Which steps looked right and which did not. Useful specifics: did all
+        12 keys show images? Did the info screen draw? Did both encoder rings
+        light in the documented order (clockwise from top: red, green, blue,
+        white)? Did input events print when you pressed keys and turned knobs?
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Terminal output
+      description: Output of `detect` and `verify`. Paste as text, not a screenshot.
+      render: shell
+  - type: input
+    id: system
+    attributes:
+      label: Distro and kernel
+      placeholder: "Ubuntu 25.10, kernel 6.17"
+    validations:
+      required: true
+  - type: textarea
+    id: lsusb
+    attributes:
+      label: USB enumeration (optional but helpful)
+      description: "`lsusb | grep -i 1b1c` — expect three ids: 2b19 hub, 2b0c keyboard, 2b18 module"
+      render: shell

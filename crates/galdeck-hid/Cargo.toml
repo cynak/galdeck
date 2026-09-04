@@ -7,6 +7,10 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
+homepage.workspace = true
+keywords = ["streamdeck", "corsair", "galleon", "hid", "linux"]
+categories = ["hardware-support", "api-bindings"]
+readme = "README.md"
 
 [features]
 default = ["encode"]

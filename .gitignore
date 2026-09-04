@@ -2,3 +2,5 @@
 Cargo.lock.orig
 *.pcapng
 !captures/*.pcapng
+# packaging output
+/crates/*/target

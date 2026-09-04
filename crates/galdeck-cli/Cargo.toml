@@ -7,6 +7,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
+homepage.workspace = true
+keywords = ["streamdeck", "corsair", "galleon", "cli", "linux"]
+categories = ["hardware-support", "command-line-utilities"]
 
 [[bin]]
 name = "galdeck"
@@ -15,7 +18,6 @@ path = "src/main.rs"
 [dependencies]
 galdeck-hid = { workspace = true }
 galdeck-ipc = { workspace = true }
-hidapi = { workspace = true }
 serde_json = { workspace = true }
 clap = { workspace = true }
 anyhow = { workspace = true }

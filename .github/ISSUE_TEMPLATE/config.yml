@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Protocol question or porting help
+    url: https://github.com/cynak/galdeck/blob/main/docs/protocol.md
+    about: The wire format is documented here (CC-BY 4.0) — reusable by any project, including GPL ones.
+  - name: Framework API reference
+    url: https://docs.rs/galdeck-hid
+    about: Building your own experience on galdeck-hid.

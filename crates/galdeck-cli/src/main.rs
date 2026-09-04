@@ -59,7 +59,7 @@ fn expect_ok(response: Response) -> Result<()> {
 }
 
 fn detect() -> Result<()> {
-    let api = hidapi::HidApi::new()?;
+    let api = galdeck_hid::hidapi::HidApi::new()?;
     let paths = galdeck_hid::Galleon::list(&api);
     if paths.is_empty() {
         println!("no Galleon 100 SD stream deck module found (usb 1b1c:2b18)");

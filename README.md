@@ -175,11 +175,11 @@ Hardware reports are the most valuable contribution right now: run
 `cargo run -p galdeck-hid --example verify` and open an issue with your
 firmware version and the result — especially on firmware newer than
 3.06.005, where the keepalive may differ. Traffic captures for anything
-that misbehaves are gold; see [docs/device-recon.md](docs/device-recon.md).
+that misbehaves are gold.
 
-Code: `cargo fmt`, `cargo clippy --workspace --all-targets`, `cargo test
---workspace` must pass. Protocol claims need a source (a capture, a
-reference implementation, or hardware behavior you observed).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide,
+[docs/device-recon.md](docs/device-recon.md) for capture recipes, and
+[CHANGELOG.md](CHANGELOG.md) for what has changed.
 
 ## License
 

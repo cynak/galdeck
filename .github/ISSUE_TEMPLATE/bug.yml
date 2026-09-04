@@ -1,0 +1,41 @@
+name: Bug report
+description: Something in the framework, daemon, or CLI misbehaves
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected instead
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Include the config you used, if the daemon is involved.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: galdeck version or commit
+      placeholder: "0.1.0, or git sha"
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Module firmware
+      description: "`galdeck detect`, if the device is involved"
+      placeholder: "3.05.003"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: "`journalctl --user -u galdeck -n 50`, or terminal output. `RUST_LOG=debug` gives per-event detail."
+      render: shell
+  - type: input
+    id: system
+    attributes:
+      label: Distro and kernel
+      placeholder: "Ubuntu 25.10, kernel 6.17"

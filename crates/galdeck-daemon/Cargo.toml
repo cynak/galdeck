@@ -7,13 +7,14 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
+homepage.workspace = true
+keywords = ["streamdeck", "corsair", "galleon", "daemon", "linux"]
+categories = ["hardware-support", "command-line-utilities"]
 
 [dependencies]
 galdeck-hid = { workspace = true }
 galdeck-ipc = { workspace = true }
 hidapi = { workspace = true }
-image = { workspace = true }
-ab_glyph = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }

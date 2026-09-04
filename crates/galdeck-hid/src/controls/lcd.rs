@@ -4,6 +4,8 @@ use crate::canvas::Canvas;
 use crate::device::Galleon;
 use crate::error::Error;
 use crate::ids::{LCD_HEIGHT, LCD_WIDTH};
+// Only the encode-gated fill/clear helpers name a color.
+#[cfg(feature = "encode")]
 use crate::Rgb;
 
 /// Handle to the info screen. Obtained from [`Galleon::lcd`].

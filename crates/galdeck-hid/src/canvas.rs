@@ -76,8 +76,9 @@ impl Canvas {
 
     /// Paint every pixel one color.
     pub fn fill(&mut self, color: crate::Rgb) {
-        for pixel in self.pixels.chunks_exact_mut(3) {
-            pixel.copy_from_slice(&color.to_array());
+        let rgb = color.to_array();
+        for pixel in self.pixels.as_chunks_mut::<3>().0 {
+            *pixel = rgb;
         }
     }
 

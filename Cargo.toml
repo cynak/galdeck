@@ -10,10 +10,14 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.75"
+# Verified with `cargo +1.88 check --workspace`; the CI msrv job holds it.
+rust-version = "1.88"
 license = "MIT"
 repository = "https://github.com/cynak/galdeck"
+homepage = "https://github.com/cynak/galdeck"
 authors = ["galdeck contributors"]
+keywords = ["streamdeck", "corsair", "galleon", "hid", "linux"]
+categories = ["hardware-support", "api-bindings"]
 
 [workspace.dependencies]
 galdeck-hid = { path = "crates/galdeck-hid" }

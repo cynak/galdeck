@@ -78,6 +78,11 @@ pub mod ids;
 pub mod protocol;
 pub mod text;
 
+/// The `hidapi` this framework was built against. Use it to create the
+/// `HidApi` you pass to [`Galleon::open`], rather than depending on
+/// `hidapi` separately and risking a version mismatch.
+pub use hidapi;
+
 pub use canvas::Canvas;
 pub use color::Rgb;
 pub use controls::{Button, Buttons, Encoder, Encoders, Lcd, Ring};

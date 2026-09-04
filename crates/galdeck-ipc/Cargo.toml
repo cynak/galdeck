@@ -7,6 +7,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
+homepage.workspace = true
+keywords = ["streamdeck", "galdeck", "ipc"]
+categories = ["hardware-support"]
 
 [dependencies]
 serde = { workspace = true }
