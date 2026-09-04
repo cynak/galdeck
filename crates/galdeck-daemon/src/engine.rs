@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender, SyncSender};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -13,11 +13,21 @@ use galdeck_ipc::{Request, Response, Status};
 
 use crate::config::{Config, EncoderConfig, KeyConfig, Page};
 use crate::render;
+use crate::ring::RingFeedback;
 
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(2);
+/// How long one poll waits for input when the device is idle.
+const POLL_TIMEOUT: Duration = Duration::from_millis(200);
+/// Shorter poll while a ring is animating, so it returns to rest on time
+/// instead of waiting for the next input event.
+const RING_FRAME: Duration = Duration::from_millis(40);
 const DEFAULT_KEY_COLOR: Rgb = Rgb::new(24, 26, 32);
 /// Cap on commands spawned for one coalesced rotation report.
 const MAX_DETENTS_PER_EVENT: u32 = 8;
+/// Depth of one encoder's rotation queue. Deep enough to absorb a fast
+/// spin, shallow enough that a slow action cannot build a backlog the
+/// knob keeps paying off after the user has stopped turning.
+const ROTATION_QUEUE_DEPTH: usize = 16;
 
 /// A control request paired with its reply channel.
 pub struct ControlMsg {
@@ -35,6 +45,10 @@ pub struct Engine {
     last_connect_attempt: Option<Instant>,
     control_rx: Receiver<ControlMsg>,
     shutdown: Arc<AtomicBool>,
+    /// One serialized action runner per encoder; see [`RotationRunner`].
+    rotation: Vec<RotationRunner>,
+    /// Ring turn-feedback state, one per encoder.
+    rings: Vec<RingFeedback>,
 }
 
 struct DeviceState {
@@ -62,6 +76,8 @@ impl Engine {
             last_connect_attempt: None,
             control_rx,
             shutdown,
+            rotation: Encoders::indices().map(|_| RotationRunner::new()).collect(),
+            rings: Encoders::indices().map(|_| RingFeedback::new()).collect(),
         })
     }
 
@@ -78,8 +94,13 @@ impl Engine {
                 }
             }
 
+            let timeout = if self.rings.iter().any(|ring| ring.is_active()) {
+                RING_FRAME
+            } else {
+                POLL_TIMEOUT
+            };
             let state = self.device.as_mut().unwrap();
-            match state.deck.poll(Duration::from_millis(200)) {
+            match state.deck.poll(timeout) {
                 Ok(events) => {
                     // A keepalive gap (suspend, long stall) means the module
                     // re-entered software mode and the firmware wiped our
@@ -91,6 +112,7 @@ impl Engine {
                     for event in events {
                         self.handle_event(event);
                     }
+                    self.tick_rings();
                 }
                 Err(e) => {
                     log::warn!("device error, will reconnect: {e}");
@@ -173,6 +195,17 @@ impl Engine {
         let page = &self.config.pages[self.page_index.min(self.config.pages.len() - 1)];
         log::info!("applying page {:?}", page.name);
 
+        let ring_colors: Vec<Rgb> = Encoders::indices()
+            .map(|index| {
+                page.encoders
+                    .iter()
+                    .find(|e| e.encoder == index)
+                    .and_then(|e| e.ring.as_deref())
+                    .and_then(Rgb::from_hex)
+                    .unwrap_or(Rgb::BLACK)
+            })
+            .collect();
+
         let result: std::result::Result<(), galdeck_hid::Error> = (|| {
             state.deck.set_brightness(self.brightness)?;
 
@@ -196,14 +229,7 @@ impl Engine {
                 }
             }
 
-            for index in Encoders::indices() {
-                let color = page
-                    .encoders
-                    .iter()
-                    .find(|e| e.encoder == index)
-                    .and_then(|e| e.ring.as_deref())
-                    .and_then(Rgb::from_hex)
-                    .unwrap_or(Rgb::BLACK);
+            for (index, color) in Encoders::indices().zip(ring_colors.iter().copied()) {
                 state.deck.encoder(index)?.ring().set_all(color)?;
             }
 
@@ -217,8 +243,42 @@ impl Engine {
             Ok(())
         })();
 
-        if let Err(e) = result {
-            log::warn!("applying page failed, will reconnect: {e}");
+        match result {
+            // The rings now show these colours, and rest back to them
+            // after every turn.
+            Ok(()) => {
+                for (ring, color) in self.rings.iter_mut().zip(ring_colors) {
+                    ring.rest(color);
+                }
+            }
+            Err(e) => {
+                log::warn!("applying page failed, will reconnect: {e}");
+                self.device = None;
+            }
+        }
+    }
+
+    /// Push any ring repaints the feedback state machine is waiting on.
+    fn tick_rings(&mut self) {
+        let Some(state) = self.device.as_mut() else {
+            return;
+        };
+        let now = Instant::now();
+        let mut failure = None;
+        'rings: for (index, ring) in self.rings.iter_mut().enumerate() {
+            for (segment, color) in ring.updates(now) {
+                let write = state
+                    .deck
+                    .encoder(index as u8)
+                    .and_then(|mut encoder| encoder.ring().set_segment(segment, color));
+                if let Err(e) = write {
+                    failure = Some(e);
+                    break 'rings;
+                }
+            }
+        }
+        if let Some(e) = failure {
+            log::warn!("ring feedback failed, will reconnect: {e}");
             self.device = None;
         }
     }
@@ -239,25 +299,37 @@ impl Engine {
                 }
             }
             Event::EncoderDown(encoder) => {
+                if let Some(ring) = self.rings.get_mut(encoder as usize) {
+                    ring.click(Instant::now());
+                }
                 if let Some(cmd) = self.encoder_config(encoder).and_then(|e| e.press.clone()) {
                     spawn_action(&cmd);
                 }
             }
             Event::EncoderRotate(encoder, delta) => {
+                // The ring answers every turn, bound or not.
+                if let Some(ring) = self.rings.get_mut(encoder as usize) {
+                    ring.turn(delta, Instant::now());
+                }
                 let cfg = self.encoder_config(encoder);
                 let cmd = if delta > 0 {
                     cfg.and_then(|e| e.cw.clone())
                 } else {
                     cfg.and_then(|e| e.ccw.clone())
                 };
-                if let Some(cmd) = cmd {
+                if let (Some(cmd), Some(runner)) = (cmd, self.rotation.get(encoder as usize)) {
                     // Fast turns coalesce into one report with |delta| > 1;
                     // run the command once per detent (capped) so spins
                     // aren't silently dropped. GALDECK_DELTA carries the
                     // signed total for scripts that prefer one scaled step.
+                    // Detents queue on this encoder's runner so they run one
+                    // at a time rather than racing each other.
                     let detents = (delta.unsigned_abs() as u32).min(MAX_DETENTS_PER_EVENT);
                     for _ in 0..detents {
-                        spawn_action_with_delta(&cmd, delta);
+                        if !runner.push(&cmd, delta) {
+                            log::debug!("encoder {encoder} queue full, dropping a detent");
+                            break;
+                        }
                     }
                 }
             }
@@ -345,25 +417,41 @@ impl Engine {
     }
 }
 
+/// Serialized runner for one encoder's rotation actions.
+///
+/// Rotation commands are usually relative read-modify-writes
+/// (`wpctl set-volume ... 2%+`), so detents run concurrently all read the
+/// same starting value and collapse into a single step — a spin then
+/// moves the volume by one notch instead of the eight it earned. Each
+/// encoder gets one worker thread that runs its detents strictly in
+/// order, one finishing before the next starts.
+struct RotationRunner {
+    tx: SyncSender<(String, i8)>,
+}
+
+impl RotationRunner {
+    fn new() -> Self {
+        let (tx, rx) = std::sync::mpsc::sync_channel::<(String, i8)>(ROTATION_QUEUE_DEPTH);
+        std::thread::spawn(move || {
+            while let Ok((cmd, delta)) = rx.recv() {
+                run_action(&cmd, Some(delta));
+            }
+        });
+        RotationRunner { tx }
+    }
+
+    /// Queue one detent, returning false if the worker is still behind. A
+    /// knob is a live control: dropping detents from an unusually fast
+    /// spin beats replaying them seconds after the hand has stopped.
+    fn push(&self, cmd: &str, delta: i8) -> bool {
+        self.tx.try_send((cmd.to_string(), delta)).is_ok()
+    }
+}
+
 /// Run a shell command without blocking the engine; a helper thread reaps it.
 fn spawn_action(cmd: &str) {
-    spawn_action_inner(cmd, None);
-}
-
-/// Like [`spawn_action`], exporting the signed rotation delta as
-/// `GALDECK_DELTA` for scripts that want one scaled step per event.
-fn spawn_action_with_delta(cmd: &str, delta: i8) {
-    spawn_action_inner(cmd, Some(delta));
-}
-
-fn spawn_action_inner(cmd: &str, delta: Option<i8>) {
     log::info!("exec: {cmd}");
-    let mut command = std::process::Command::new("sh");
-    command.arg("-c").arg(cmd);
-    if let Some(delta) = delta {
-        command.env("GALDECK_DELTA", delta.to_string());
-    }
-    match command.spawn() {
+    match action_command(cmd, None).spawn() {
         Ok(mut child) => {
             std::thread::spawn(move || match child.wait() {
                 Ok(status) if !status.success() => log::warn!("action exited with {status}"),
@@ -372,5 +460,65 @@ fn spawn_action_inner(cmd: &str, delta: Option<i8>) {
             });
         }
         Err(e) => log::warn!("spawning action failed: {e}"),
+    }
+}
+
+/// Run a shell command to completion. Only the rotation workers call this;
+/// everything else goes through [`spawn_action`] so the engine keeps
+/// polling the device.
+fn run_action(cmd: &str, delta: Option<i8>) {
+    log::info!("exec: {cmd}");
+    match action_command(cmd, delta).status() {
+        Ok(status) if !status.success() => log::warn!("action exited with {status}"),
+        Err(e) => log::warn!("spawning action failed: {e}"),
+        _ => {}
+    }
+}
+
+/// `sh -c <cmd>`, with the signed rotation delta exported as
+/// `GALDECK_DELTA` for scripts that prefer one scaled step per event.
+fn action_command(cmd: &str, delta: Option<i8>) -> std::process::Command {
+    let mut command = std::process::Command::new("sh");
+    command.arg("-c").arg(cmd);
+    if let Some(delta) = delta {
+        command.env("GALDECK_DELTA", delta.to_string());
+    }
+    command
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The bug this guards against: rotation actions are relative
+    /// read-modify-writes, so detents running concurrently all read the
+    /// same starting value and collapse into a single step. Eight queued
+    /// detents must land as eight increments, not one.
+    #[test]
+    fn detents_run_one_at_a_time() {
+        let path = std::env::temp_dir().join(format!("galdeck-detents-{}", std::process::id()));
+        std::fs::write(&path, "0").unwrap();
+        let file = path.display();
+        let cmd = format!("n=$(cat {file}); echo $((n + 1)) > {file}");
+
+        let runner = RotationRunner::new();
+        for _ in 0..8 {
+            assert!(runner.push(&cmd, 1), "queue is deeper than eight detents");
+        }
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let count = loop {
+            let count = std::fs::read_to_string(&path).unwrap_or_default();
+            if count.trim() == "8" || Instant::now() >= deadline {
+                break count;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        std::fs::remove_file(&path).ok();
+        assert_eq!(
+            count.trim(),
+            "8",
+            "detents raced instead of running in order"
+        );
     }
 }

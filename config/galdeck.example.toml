@@ -6,6 +6,12 @@
 #   6  7  8
 #   9 10 11
 # Encoders: 0 = left, 1 = right. Colors are #rrggbb.
+#
+# `ring` is the colour an encoder's LED ring rests at. Turning the knob
+# steps one lit segment around the ring in the direction of the turn and
+# a click flashes the whole ring, so a knob answers even when its command
+# has no visible effect of its own. Rings with no colour set rest dark and
+# still light up on use.
 
 brightness = 60
 # font = "/usr/share/fonts/TTF/DejaVuSans.ttf"   # optional, auto-detected

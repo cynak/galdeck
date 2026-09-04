@@ -42,7 +42,7 @@ workflow, so anyone can build their own experience on it.
 | Piece | What it does |
 |---|---|
 | [`crates/galdeck-hid`](crates/galdeck-hid) | **The framework.** Component handles for each control, a drawing canvas, colors, fonts, an event stream, and the keepalive that keeps the module awake. Plus `examples/verify.rs`, the hardware checkout harness. |
-| [`crates/galdeck-daemon`](crates/galdeck-daemon) | A reference consumer: TOML profiles with pages, key labels/icons/colors, shell actions, encoder bindings; auto-reconnect; control socket. |
+| [`crates/galdeck-daemon`](crates/galdeck-daemon) | A reference consumer: TOML profiles with pages, key labels/icons/colors, shell actions, encoder bindings with ring turn feedback; auto-reconnect; control socket. |
 | [`crates/galdeck-cli`](crates/galdeck-cli) | `galdeck` command: `detect`, `status`, `brightness`, `page`, `reload`, `ping`. |
 | [`docs/protocol.md`](docs/protocol.md) | Independent protocol documentation (CC-BY 4.0). |
 | [`udev/`](udev), [`systemd/`](systemd) | Scoped udev rule (uaccess, not world-writable) and a user service unit. |

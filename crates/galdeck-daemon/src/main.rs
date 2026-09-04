@@ -2,6 +2,7 @@ mod config;
 mod engine;
 mod ipc_server;
 mod render;
+mod ring;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
