@@ -14,18 +14,53 @@ pub const CONTROL_INTERFACE: i32 = 0;
 pub const KEY_COUNT: u8 = 12;
 pub const KEY_COLUMNS: u8 = 3;
 pub const KEY_ROWS: u8 = 4;
-/// Native pixel size of one key; key images are JPEG at exactly this size,
-/// no rotation or mirroring.
+/// Edge length the `02 07` key-image path accepts. The firmware places and
+/// clips these images itself — the report carries no geometry — so this is
+/// the size that path blits, not the size of the physical key.
+///
+/// Must stay a multiple of [`JPEG_MCU`]: observed on firmware 3.05.005,
+/// sending 164 or 172 shears the image progressively down the rows rather
+/// than rejecting it. Sizes below this render smaller; sizes above it add
+/// no coverage.
 pub const KEY_PIXELS: u32 = 160;
+
+/// JPEG minimum coded unit. The encoder emits 4:4:4, so blocks are 8x8 and
+/// any image dimension that is not a multiple of 8 risks shear. This is the
+/// bound for the `02 07` key-image path.
+pub const JPEG_MCU: u32 = 8;
+
+/// Dimension granularity for `02 0c` region updates — stricter than
+/// [`JPEG_MCU`].
+///
+/// Observed on firmware 3.05.005: a region 8 pixels wide renders only about
+/// half its requested height, and a region whose height is a multiple of 8
+/// but not 16 shears into diagonal streaks. Both are consistent with the
+/// device rounding a region's stride up to 16, consuming two rows of image
+/// data for every row it paints. Region width and height are rounded to
+/// this, not to [`JPEG_MCU`].
+pub const REGION_MCU: u32 = 16;
 
 pub const ENCODER_COUNT: u8 = 2;
 /// Individually addressable RGB LEDs around each encoder.
 pub const ENCODER_RING_LEDS: u8 = 4;
 
-/// Host-addressable info-screen segment (the physical panel is larger, but
-/// this is the region the protocol exposes for drawing).
+/// The info-screen segment: the region [`Lcd`](crate::controls::Lcd) draws
+/// to. This is a *contract*, not the limit of what the hardware accepts —
+/// see [`PANEL_WIDTH`] / [`PANEL_HEIGHT`] for the addressable extent.
 pub const LCD_WIDTH: u16 = 720;
 pub const LCD_HEIGHT: u16 = 384;
+
+/// Full addressable extent of the `02 0c` region path.
+///
+/// The module has one physical portrait display: the info screen on top and
+/// the 12 keys below it. Observed on firmware 3.05.005 — a region update at
+/// y=384, past the [`LCD_HEIGHT`] the library used to enforce, rendered on
+/// the key area, and a ruler spanning y=256..448 ran continuously from the
+/// info screen onto the top key row.
+pub const PANEL_WIDTH: u16 = 720;
+/// NOT MEASURED: reported panel height, not yet confirmed by drawing at the
+/// bottom of the panel. Nothing below y=448 has been written successfully.
+pub const PANEL_HEIGHT: u16 = 1280;
 
 /// The module leaves software mode if it misses keepalives; senders use
 /// this interval. (The exact device-side timeout is uncharacterized —
@@ -60,6 +95,6 @@ pub const INPUT_REPORT_LEN: usize = 512;
 pub const DEFAULT_JPEG_QUALITY: u8 = 90;
 
 /// Firmware versions this protocol implementation is validated against:
-/// 3.06.005 by the upstream reference implementations, 3.05.003 by this
-/// project on physical hardware (2026-09-03).
-pub const VALIDATED_FIRMWARES: &[&str] = &["3.05.003", "3.06.005"];
+/// 3.06.005 by the upstream reference implementations, 3.05.003 and
+/// 3.05.005 by this project on physical hardware (2026-09-03, 2026-09-05).
+pub const VALIDATED_FIRMWARES: &[&str] = &["3.05.003", "3.05.005", "3.06.005"];

@@ -141,10 +141,12 @@ pub fn key_image_reports(key: u8, jpeg: &[u8]) -> Result<Vec<Vec<u8>>, Error> {
     Ok(reports)
 }
 
-/// Output reports for drawing a JPEG into a rectangle of the LCD segment.
-/// The JPEG dimensions must match `w` x `h` and the rectangle must fit in
-/// 720x384. Each report is exactly 1024 bytes:
-/// `02 0c <x:u16le> <y:u16le> <w:u16le> <h:u16le> <last> <part:u16le> <len:u16le> 00` + payload.
+/// Output reports for drawing a JPEG into a rectangle of the info-screen
+/// segment. Rejects anything outside 720x384 — [`Lcd`](crate::controls::Lcd)
+/// contracts for that region, and silently widening it would turn a caller
+/// drawing at y=400 into one painting on the keys.
+///
+/// Use [`panel_region_reports`] to address the whole display.
 pub fn lcd_region_reports(
     x: u16,
     y: u16,
@@ -159,6 +161,34 @@ pub fn lcd_region_reports(
     {
         return Err(Error::InvalidArgument(format!(
             "region {w}x{h}+{x}+{y} does not fit the {LCD_WIDTH}x{LCD_HEIGHT} lcd segment"
+        )));
+    }
+    panel_region_reports(x, y, w, h, jpeg)
+}
+
+/// Output reports for drawing a JPEG anywhere on the physical panel.
+///
+/// The `02 0c` header carries x/y/w/h as plain u16 LE, so it addresses the
+/// whole 720x1280 display — the info screen and the key area alike. The
+/// JPEG dimensions must match `w` x `h`, and both should be multiples of
+/// [`JPEG_MCU`]; the firmware shears images whose dimensions are not.
+///
+/// Each report is exactly 1024 bytes:
+/// `02 0c <x:u16le> <y:u16le> <w:u16le> <h:u16le> <last> <part:u16le> <len:u16le> 00` + payload.
+pub fn panel_region_reports(
+    x: u16,
+    y: u16,
+    w: u16,
+    h: u16,
+    jpeg: &[u8],
+) -> Result<Vec<Vec<u8>>, Error> {
+    if w == 0
+        || h == 0
+        || u32::from(x) + u32::from(w) > u32::from(PANEL_WIDTH)
+        || u32::from(y) + u32::from(h) > u32::from(PANEL_HEIGHT)
+    {
+        return Err(Error::InvalidArgument(format!(
+            "region {w}x{h}+{x}+{y} does not fit the {PANEL_WIDTH}x{PANEL_HEIGHT} panel"
         )));
     }
     if jpeg.is_empty() {
@@ -420,6 +450,24 @@ mod tests {
         assert!(lcd_region_reports(65500, 0, 100, 50, &jpeg).is_err());
         assert!(lcd_region_reports(0, 65500, 10, 100, &jpeg).is_err());
         lcd_region_reports(0, 0, 720, 384, &jpeg).unwrap();
+    }
+
+    #[test]
+    fn panel_regions_reach_the_key_area_but_lcd_regions_do_not() {
+        let jpeg = vec![0u8; 10];
+        // The key area is below the info-screen segment. The panel path
+        // must reach it; the Lcd path must keep refusing, or a consumer
+        // drawing past 384 would silently start painting on the keys.
+        let reports = panel_region_reports(0, 896, 720, 224, &jpeg).unwrap();
+        assert_eq!(u16::from_le_bytes([reports[0][4], reports[0][5]]), 896);
+        assert!(lcd_region_reports(0, 896, 720, 224, &jpeg).is_err());
+
+        // Full panel accepts; one row past it does not.
+        panel_region_reports(0, 0, 720, 1280, &jpeg).unwrap();
+        assert!(panel_region_reports(0, 1200, 720, 200, &jpeg).is_err());
+        assert!(panel_region_reports(0, 1280, 720, 8, &jpeg).is_err());
+        // Width is unchanged: the panel is no wider than the segment.
+        assert!(panel_region_reports(700, 0, 100, 50, &jpeg).is_err());
     }
 
     fn raw_report(event_type: u8, tail: &[u8]) -> Vec<u8> {

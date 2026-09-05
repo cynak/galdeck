@@ -41,7 +41,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # The framework must still build for consumers that upload their own
       # pre-encoded JPEGs and skip the image dependency.
-      - run: cargo check --no-default-features
+      #
+      # --all-targets on purpose: without it the examples are never compiled
+      # in this configuration, and an example that needs `encode` but does
+      # not declare `required-features` slips through to a release.
+      - run: cargo check --no-default-features --all-targets
 
   msrv:
     name: minimum supported Rust version
