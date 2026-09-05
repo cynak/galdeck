@@ -239,7 +239,7 @@ mod tests {
             return;
         };
         let style = TextStyle::new(&font, 40.0).align(Align::Center);
-        let mut canvas = Canvas::new(constants::TOGGLE_KEY_WIDTH, constants:TOGGLE_KEY_HEIGHT,);
+        let mut canvas = Canvas::new(crate::ids::KEY_PIXELS, crate::ids::KEY_PIXELS);
         canvas.draw_text("Hi", 80, 80, &style);
         let lit = canvas.as_rgb().iter().filter(|b| **b > 0).count();
         assert!(lit > 0, "text should have marked pixels");
