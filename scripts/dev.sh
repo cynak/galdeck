@@ -3,7 +3,7 @@
 # galdeck development helper.
 #
 #   scripts/dev.sh doctor              check the environment before anything else
-#   scripts/dev.sh check               fmt, clippy and tests, the way CI runs them
+#   scripts/dev.sh check               fmt, clippy, tests and docs, as CI runs them
 #   scripts/dev.sh calibrate [args]    run the calibration wizard on the device
 #   scripts/dev.sh layout [--json]     print the saved layout, no device needed
 #   scripts/dev.sh probe <mode>        raw protocol probes (see --help)
@@ -116,6 +116,12 @@ cmd_check() {
     # Denied, not just reported: the encode feature gates whole methods, so
     # an unused import here means something is compiled that should not be.
     RUSTFLAGS="-D warnings" cargo check --no-default-features --all-targets
+    bold "docs"
+    # The docs job is the first thing in CI that compiles the library on its
+    # own, so a syntax error in a test module surfaces here before anywhere
+    # else. Worth running locally for that reason alone.
+    RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
+    cargo test --doc
 }
 
 cmd_build() { cargo build --examples "$@"; }
