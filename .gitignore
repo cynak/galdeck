@@ -4,3 +4,4 @@ Cargo.lock.orig
 !captures/*.pcapng
 # packaging output
 /crates/*/target
+scripts/
