@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use hidapi::{DeviceInfo, HidApi, HidDevice};
 
-use crate::controls::{Button, Buttons, Encoder, Encoders, Lcd};
+use crate::controls::{Button, Buttons, Encoder, Encoders, Lcd, Panel};
 use crate::error::Error;
 use crate::ids::*;
 use crate::protocol::{self, InputReport};
@@ -274,6 +274,16 @@ impl Galleon {
         Lcd::new(self)
     }
 
+    /// The whole physical display, info screen and key area alike.
+    ///
+    /// [`Lcd`] is the safe, documented segment; this is the raw surface
+    /// underneath it. Where the keys actually sit on the panel varies with
+    /// how the display is mounted behind the bezel, so callers measure it
+    /// rather than assuming.
+    pub fn panel(&mut self) -> Panel<'_> {
+        Panel::new(self)
+    }
+
     /// Both rotary encoders.
     pub fn encoders(&mut self) -> Encoders<'_> {
         Encoders::new(self)
@@ -323,6 +333,21 @@ impl Galleon {
         jpeg: &[u8],
     ) -> Result<(), Error> {
         for report in protocol::lcd_region_reports(x, y, width, height, jpeg)? {
+            self.tick_keepalive()?;
+            self.device.write(&report)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn send_panel_region(
+        &mut self,
+        x: u16,
+        y: u16,
+        width: u16,
+        height: u16,
+        jpeg: &[u8],
+    ) -> Result<(), Error> {
+        for report in protocol::panel_region_reports(x, y, width, height, jpeg)? {
             self.tick_keepalive()?;
             self.device.write(&report)?;
         }
