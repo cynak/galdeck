@@ -87,7 +87,7 @@ pub use hidapi;
 pub use canvas::Canvas;
 pub use color::Rgb;
 pub use controls::{Button, Buttons, Encoder, Encoders, Lcd, Panel, Ring};
-pub use layout::{Grid, Layout, Rect, Zone};
 pub use device::{Event, Galleon};
 pub use error::Error;
+pub use layout::{Grid, Layout, Rect, Zone};
 pub use text::{Align, Font, TextStyle};

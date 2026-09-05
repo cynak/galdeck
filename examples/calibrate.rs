@@ -82,8 +82,6 @@ impl McuFloor for u16 {
     }
 }
 
-
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Stage {
     /// Top and bottom of the zone area.
@@ -199,10 +197,9 @@ impl Session {
                 // moving the top must not drag the bottom with it.
                 // Never above the HUD: driving zones over it would hide
                 // the numbers that are the way back from a bad bound.
-                let top = (bounds.y as i32 + left * step)
-                    .clamp(HUD_HEIGHT as i32, PANEL_HEIGHT as i32);
-                let bottom =
-                    (bounds.bottom() as i32 + right * step).clamp(0, PANEL_HEIGHT as i32);
+                let top =
+                    (bounds.y as i32 + left * step).clamp(HUD_HEIGHT as i32, PANEL_HEIGHT as i32);
+                let bottom = (bounds.bottom() as i32 + right * step).clamp(0, PANEL_HEIGHT as i32);
                 if bottom > top {
                     next.bounds.y = top as u16;
                     next.bounds.height = (bottom - top) as u16;
@@ -360,7 +357,8 @@ fn fill_banded(
     let bottom = rect.bottom() as u16;
     while y < bottom {
         let height = MAX_BAND.min(bottom - y);
-        deck.panel().fill_rect(rect.x, y, rect.width, height, color)?;
+        deck.panel()
+            .fill_rect(rect.x, y, rect.width, height, color)?;
         y += height;
     }
     Ok(())
@@ -463,9 +461,19 @@ fn render(
 
         for (at, band) in bands.iter().enumerate() {
             let cell = if vertical {
-                Rect::new(inside.x, band.start, inside.width.to_mcu_floor(), band.len())
+                Rect::new(
+                    inside.x,
+                    band.start,
+                    inside.width.to_mcu_floor(),
+                    band.len(),
+                )
             } else {
-                Rect::new(band.start, inside.y, band.len(), inside.height.to_mcu_floor())
+                Rect::new(
+                    band.start,
+                    inside.y,
+                    band.len(),
+                    inside.height.to_mcu_floor(),
+                )
             };
             if !cell.is_drawable() {
                 continue;
@@ -500,8 +508,7 @@ fn render(
                     (RULE * 2) as i32 + 6,
                     &TextStyle::new(font, 32.0).align(Align::Center).color(color),
                 );
-                deck.panel()
-                    .draw_at(cell.x + RULE, cell.y + RULE, &label)?;
+                deck.panel().draw_at(cell.x + RULE, cell.y + RULE, &label)?;
             }
         }
         return Ok(());
@@ -554,11 +561,13 @@ fn render(
                     &zone.index.to_string(),
                     bounds.width as i32 / 2,
                     bounds.height as i32 / 2 + 14,
-                    &TextStyle::new(font, 40.0).align(Align::Center).color(if chosen {
-                        Rgb::WHITE
-                    } else {
-                        Rgb::new(70, 70, 80)
-                    }),
+                    &TextStyle::new(font, 40.0)
+                        .align(Align::Center)
+                        .color(if chosen {
+                            Rgb::WHITE
+                        } else {
+                            Rgb::new(70, 70, 80)
+                        }),
                 );
             }
         }
@@ -776,8 +785,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if matches!(
                         session.stage,
                         Stage::Rows | Stage::Columns | Stage::NudgeMove | Stage::NudgeSize
-                    )
-                        && u16::from(index) < session.layout.zone_count() =>
+                    ) && u16::from(index) < session.layout.zone_count() =>
                 {
                     session.selected = index;
                     dirty = true;
@@ -790,7 +798,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // release, so the HUD confirms it before the user lets go.
         if let Some(since) = session.left_down {
             if !session.left_held && since.elapsed() >= HOLD {
-                session.step = if session.step >= 8 { 1 } else { session.step * 2 };
+                session.step = if session.step >= 8 {
+                    1
+                } else {
+                    session.step * 2
+                };
                 session.left_held = true;
                 dirty = true;
             }

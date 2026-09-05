@@ -113,7 +113,9 @@ cmd_check() {
     bold "test"
     cargo test --all-features
     bold "build (no default features)"
-    cargo check --no-default-features
+    # Denied, not just reported: the encode feature gates whole methods, so
+    # an unused import here means something is compiled that should not be.
+    RUSTFLAGS="-D warnings" cargo check --no-default-features --all-targets
 }
 
 cmd_build() { cargo build --examples "$@"; }

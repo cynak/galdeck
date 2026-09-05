@@ -82,7 +82,11 @@ fn ruler_card(width: u32, height: u32, font: Option<&Font>) -> Canvas {
 /// Paint every key solid red, then upload the card at `size` over it.
 /// Bypasses `Button::draw` on purpose: that enforces `KEY_PIXELS`, and the
 /// whole point here is to try sizes it would reject.
-fn show(deck: &mut Galleon, size: u32, font: Option<&Font>) -> Result<(), Box<dyn std::error::Error>> {
+fn show(
+    deck: &mut Galleon,
+    size: u32,
+    font: Option<&Font>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let jpeg = ruler_card(size, size, font).to_jpeg(90)?;
     for index in 0..galdeck::Buttons::COUNT {
         deck.button(index)?.set_color(UNCOVERED)?;
@@ -92,7 +96,6 @@ fn show(deck: &mut Galleon, size: u32, font: Option<&Font>) -> Result<(), Box<dy
     }
     Ok(())
 }
-
 
 /// Every key at a different size, so one look compares them all. Key `i`
 /// gets `start + i * step`; the label on each card is its own size.
@@ -116,12 +119,14 @@ fn grid(
         let size = start + index as u32 * step;
         let jpeg = ruler_card(size, size, font).to_jpeg(90)?;
         deck.button(index)?.set_jpeg(&jpeg)?;
-        let (column, row) = (index % galdeck::Buttons::COLUMNS, index / galdeck::Buttons::COLUMNS);
+        let (column, row) = (
+            index % galdeck::Buttons::COLUMNS,
+            index / galdeck::Buttons::COLUMNS,
+        );
         println!("    key {index} (col {column}, row {row}) = {size}");
     }
     Ok(())
 }
-
 
 /// Does pre-filling the key hide the uncovered margin?
 ///
@@ -133,7 +138,11 @@ fn grid(
 /// Top two rows (keys 0-5) pre-fill RED, so the margin stands out. Bottom
 /// two rows (keys 6-11) pre-fill with the card's own background, so the
 /// margin should disappear and the key should read as full-bleed.
-fn prefill(deck: &mut Galleon, size: u32, font: Option<&Font>) -> Result<(), Box<dyn std::error::Error>> {
+fn prefill(
+    deck: &mut Galleon,
+    size: u32,
+    font: Option<&Font>,
+) -> Result<(), Box<dyn std::error::Error>> {
     // A plain card: one background, a thick contrasting inner frame, so an
     // uncovered edge is obvious but a matched one is invisible.
     let background = Rgb::new(20, 110, 200);
@@ -144,7 +153,9 @@ fn prefill(deck: &mut Galleon, size: u32, font: Option<&Font>) -> Result<(), Box
             "FULL",
             size as i32 / 2,
             size as i32 / 2 + 10,
-            &TextStyle::new(font, 30.0).align(Align::Center).color(Rgb::BLACK),
+            &TextStyle::new(font, 30.0)
+                .align(Align::Center)
+                .color(Rgb::BLACK),
         );
     }
     let jpeg = canvas.to_jpeg(90)?;
@@ -160,7 +171,6 @@ fn prefill(deck: &mut Galleon, size: u32, font: Option<&Font>) -> Result<(), Box
     println!("    keys 6-11 (bottom two rows): background underneath — margin hidden");
     Ok(())
 }
-
 
 /// Three sizes side by side, one per column, repeated down all four rows.
 ///
@@ -187,7 +197,6 @@ fn columns(
     Ok(())
 }
 
-
 /// Rectangular cards, one shape per column. The key cells of the 720x1280
 /// panel are 240x224, so the panel a key image lands on need not be square
 /// even though every implementation so far has assumed it is.
@@ -209,7 +218,6 @@ fn rect_columns(
     }
     Ok(())
 }
-
 
 /// Live size tuning on the knobs.
 ///
@@ -270,7 +278,6 @@ fn tune(deck: &mut Galleon, font: Option<&Font>) -> Result<(), Box<dyn std::erro
         }
     }
 }
-
 
 /// Region reports built without galdeck's bounds check.
 ///
@@ -334,20 +341,25 @@ fn panel_probe(
             &format!("{w}x{h} @ {x},{y}"),
             w as i32 / 2,
             h as i32 / 2,
-            &TextStyle::new(font, 40.0).align(Align::Center).color(Rgb::WHITE),
+            &TextStyle::new(font, 40.0)
+                .align(Align::Center)
+                .color(Rgb::WHITE),
         );
     }
 
     let jpeg = canvas.to_jpeg(85)?;
     let reports = region_reports_unchecked(x, y, w, h, &jpeg);
-    println!("    {w}x{h} at ({x},{y}) — {} bytes in {} reports", jpeg.len(), reports.len());
+    println!(
+        "    {w}x{h} at ({x},{y}) — {} bytes in {} reports",
+        jpeg.len(),
+        reports.len()
+    );
     for report in &reports {
         deck.poll(Duration::from_millis(0))?;
         raw.write(report)?;
     }
     Ok(())
 }
-
 
 /// Paint all 12 presumed key cells through the region path.
 ///
@@ -372,7 +384,10 @@ fn cell_map(
     let raw = api.open_path(&std::ffi::CString::new(path)?)?;
 
     for index in 0..galdeck::Buttons::COUNT {
-        let (column, row) = (index % galdeck::Buttons::COLUMNS, index / galdeck::Buttons::COLUMNS);
+        let (column, row) = (
+            index % galdeck::Buttons::COLUMNS,
+            index / galdeck::Buttons::COLUMNS,
+        );
         let mut canvas = Canvas::filled(
             w as u32,
             h as u32,
@@ -381,14 +396,22 @@ fn cell_map(
         // Border hard against the cell edge: if any of it is missing, the
         // cell is bigger than the key; if it is inset, it is smaller.
         for ring in 0..4 {
-            canvas.draw_rect(ring, ring, w as u32 - 2 * ring as u32, h as u32 - 2 * ring as u32, Rgb::WHITE);
+            canvas.draw_rect(
+                ring,
+                ring,
+                w as u32 - 2 * ring as u32,
+                h as u32 - 2 * ring as u32,
+                Rgb::WHITE,
+            );
         }
         if let Some(font) = font {
             canvas.draw_text(
                 &index.to_string(),
                 w as i32 / 2,
                 h as i32 / 2 + 16,
-                &TextStyle::new(font, 48.0).align(Align::Center).color(Rgb::BLACK),
+                &TextStyle::new(font, 48.0)
+                    .align(Align::Center)
+                    .color(Rgb::BLACK),
             );
         }
         let jpeg = canvas.to_jpeg(85)?;
@@ -402,7 +425,6 @@ fn cell_map(
     }
     Ok(())
 }
-
 
 /// How far down the panel does the visible window actually go?
 ///
@@ -432,7 +454,11 @@ fn ruler(
             0,
             local,
             if major { w as u32 } else { 40 },
-            if major { Rgb::WHITE } else { Rgb::new(90, 90, 90) },
+            if major {
+                Rgb::WHITE
+            } else {
+                Rgb::new(90, 90, 90)
+            },
         );
         if major {
             if let Some(font) = font {
@@ -445,14 +471,17 @@ fn ruler(
 
     let jpeg = canvas.to_jpeg(90)?;
     let reports = region_reports_unchecked(0, y0, w, h, &jpeg);
-    println!("    ruler y={y0}..{y1} — {} bytes in {} reports", jpeg.len(), reports.len());
+    println!(
+        "    ruler y={y0}..{y1} — {} bytes in {} reports",
+        jpeg.len(),
+        reports.len()
+    );
     for report in &reports {
         deck.poll(Duration::from_millis(0))?;
         raw.write(report)?;
     }
     Ok(())
 }
-
 
 /// Fine ruler across the seam between the info screen and the key row.
 ///
@@ -507,7 +536,10 @@ fn fine_ruler(
 
     let jpeg = canvas.to_jpeg(92)?;
     let reports = region_reports_unchecked(0, y0, w, h, &jpeg);
-    println!("    fine ruler y={y0}..{y1}, label every {STEP}px — {} reports", reports.len());
+    println!(
+        "    fine ruler y={y0}..{y1}, label every {STEP}px — {} reports",
+        reports.len()
+    );
     for report in &reports {
         deck.poll(Duration::from_millis(0))?;
         raw.write(report)?;
@@ -516,7 +548,11 @@ fn fine_ruler(
 }
 
 /// Interactive hunt: the left encoder resizes the card, any key press ends.
-fn sweep(deck: &mut Galleon, mut size: u32, font: Option<&Font>) -> Result<(), Box<dyn std::error::Error>> {
+fn sweep(
+    deck: &mut Galleon,
+    mut size: u32,
+    font: Option<&Font>,
+) -> Result<(), Box<dyn std::error::Error>> {
     println!("    LEFT knob resizes the card, press any key to stop.");
     println!("    Grow it until the red border disappears — that size is the panel size.");
     show(deck, size, font)?;
@@ -754,7 +790,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if flag("--sweep") {
-        return sweep(&mut deck, value("--sweep").unwrap_or(KEY_PIXELS), font.as_ref());
+        return sweep(
+            &mut deck,
+            value("--sweep").unwrap_or(KEY_PIXELS),
+            font.as_ref(),
+        );
     }
 
     if let Some(size) = value("--size") {

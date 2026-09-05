@@ -702,9 +702,7 @@ impl Layout {
         if self.grid.rows == 0 || self.grid.columns == 0 {
             return Err(LayoutProblem::EmptyGrid);
         }
-        if self.screen.right() > PANEL_WIDTH as u32
-            || self.screen.bottom() > PANEL_HEIGHT as u32
-        {
+        if self.screen.right() > PANEL_WIDTH as u32 || self.screen.bottom() > PANEL_HEIGHT as u32 {
             return Err(LayoutProblem::BoundsOutsidePanel(self.screen));
         }
         if self.grid.bounds.right() > PANEL_WIDTH as u32
@@ -817,7 +815,10 @@ impl Layout {
             "bounds = {},{},{},{}\n",
             self.grid.bounds.x, self.grid.bounds.y, self.grid.bounds.width, self.grid.bounds.height
         ));
-        out.push_str(&format!("matrix = {},{}\n", self.grid.rows, self.grid.columns));
+        out.push_str(&format!(
+            "matrix = {},{}\n",
+            self.grid.rows, self.grid.columns
+        ));
         if self.row_bands.len() == self.grid.rows as usize {
             out.push_str("\n# measured row extents: row<n> = top,bottom\n");
             for (row, band) in self.row_bands.iter().enumerate() {
@@ -1129,7 +1130,6 @@ impl Layout {
     }
 }
 
-
 // ---- graphical representation ----
 
 impl Layout {
@@ -1153,9 +1153,10 @@ impl Layout {
         }
         // Uniform scale, so the schematic keeps the panel's real proportions
         // — a squashed picture would misrepresent the thing being measured.
-        let scale = (usable_w as f32 / PANEL_WIDTH as f32)
-            .min(usable_h as f32 / PANEL_HEIGHT as f32);
-        let offset_x = MARGIN as i32 + ((usable_w as f32 - PANEL_WIDTH as f32 * scale) / 2.0) as i32;
+        let scale =
+            (usable_w as f32 / PANEL_WIDTH as f32).min(usable_h as f32 / PANEL_HEIGHT as f32);
+        let offset_x =
+            MARGIN as i32 + ((usable_w as f32 - PANEL_WIDTH as f32 * scale) / 2.0) as i32;
         let offset_y =
             MARGIN as i32 + ((usable_h as f32 - PANEL_HEIGHT as f32 * scale) / 2.0) as i32;
         let map = |value: u16| (value as f32 * scale) as i32;
@@ -1189,10 +1190,7 @@ impl Layout {
         );
 
         for zone in self.zones() {
-            let (x, y) = (
-                offset_x + map(zone.bounds.x),
-                offset_y + map(zone.bounds.y),
-            );
+            let (x, y) = (offset_x + map(zone.bounds.x), offset_y + map(zone.bounds.y));
             let (w, h) = (span(zone.bounds.width), span(zone.bounds.height));
             canvas.fill_rect(x, y, w, h, Rgb::new(10, 40, 22));
             canvas.draw_rect(
@@ -1310,7 +1308,10 @@ mod tests {
         let mut layout = Layout::TEMPLATE;
         layout.set_zone(4, Rect::new(100, 700, 200, 200)).unwrap();
         assert!(layout.zone_at(4).unwrap().overridden);
-        assert_eq!(layout.zone_at(4).unwrap().bounds, Rect::new(100, 700, 200, 200));
+        assert_eq!(
+            layout.zone_at(4).unwrap().bounds,
+            Rect::new(100, 700, 200, 200)
+        );
         assert!(!layout.zone_at(5).unwrap().overridden);
 
         // Re-measuring the boundary must not silently discard corrections.
@@ -1318,7 +1319,10 @@ mod tests {
             bounds: Rect::new(0, 400, 720, 880),
             ..layout.grid
         });
-        assert_eq!(layout.zone_at(4).unwrap().bounds, Rect::new(100, 700, 200, 200));
+        assert_eq!(
+            layout.zone_at(4).unwrap().bounds,
+            Rect::new(100, 700, 200, 200)
+        );
 
         layout.clear_zone(4);
         assert!(!layout.zone_at(4).unwrap().overridden);
@@ -1392,7 +1396,10 @@ mod tests {
         // Setting one row seeds the rest from the division rather than
         // collapsing them.
         assert_eq!(layout.row_bands().len(), 4);
-        assert_eq!(layout.zone(0, 0).unwrap().bounds.y, Layout::TEMPLATE.zone(0, 0).unwrap().bounds.y);
+        assert_eq!(
+            layout.zone(0, 0).unwrap().bounds.y,
+            Layout::TEMPLATE.zone(0, 0).unwrap().bounds.y
+        );
         layout.validate().unwrap();
 
         layout.clear_bands();
@@ -1405,7 +1412,11 @@ mod tests {
         layout.set_row(2, Band::new(500, 500)).unwrap();
         assert!(matches!(
             layout.validate(),
-            Err(LayoutProblem::BandCollapsed { axis: "row", at: 2, .. })
+            Err(LayoutProblem::BandCollapsed {
+                axis: "row",
+                at: 2,
+                ..
+            })
         ));
 
         let mut layout = Layout::TEMPLATE;
@@ -1479,7 +1490,10 @@ mod tests {
         broken.set_column(2, Band::new(100, 200)).unwrap();
         assert!(matches!(
             broken.validate(),
-            Err(LayoutProblem::BandsOutOfOrder { axis: "column", at: 2 })
+            Err(LayoutProblem::BandsOutOfOrder {
+                axis: "column",
+                at: 2
+            })
         ));
     }
 
@@ -1681,7 +1695,11 @@ mod tests {
         let text = format!("version = {LAYOUT_FORMAT_VERSION}\nbounds = 0,384\n");
         assert!(matches!(
             Layout::from_text(&text),
-            Err(LayoutError::BadValue { expected: 4, got: 2, .. })
+            Err(LayoutError::BadValue {
+                expected: 4,
+                got: 2,
+                ..
+            })
         ));
     }
 
@@ -1690,7 +1708,10 @@ mod tests {
         let mut layout = Layout::TEMPLATE;
         // Far further than the panel is wide or tall, in one step.
         let moved = layout.nudge_zone(2, 5000, 5000, 0, 0).unwrap();
-        assert!(moved.is_drawable(), "{moved:?} would be rejected by the wire");
+        assert!(
+            moved.is_drawable(),
+            "{moved:?} would be rejected by the wire"
+        );
         assert!(moved.right() <= PANEL_WIDTH as u32);
         assert!(moved.bottom() <= PANEL_HEIGHT as u32);
         layout.validate().unwrap();
@@ -1745,7 +1766,11 @@ mod tests {
             ..Layout::TEMPLATE
         };
         let last_column = layout.zone(0, 2).unwrap();
-        assert_eq!(last_column.bounds.right(), 719, "right edge must be reached");
+        assert_eq!(
+            last_column.bounds.right(),
+            719,
+            "right edge must be reached"
+        );
         let last_row = layout.zone(3, 0).unwrap();
         assert_eq!(last_row.bounds.bottom(), 384 + 890);
 

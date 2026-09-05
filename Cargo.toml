@@ -22,6 +22,24 @@ default = ["encode"]
 # framework still drives LEDs and uploads pre-encoded JPEGs.
 encode = ["dep:image"]
 
+# The drawing examples need canvas encoding; only `detect` works without it.
+# Declared so `cargo check --no-default-features --all-targets` skips them
+# instead of failing on methods the feature gates away.
+[[example]]
+name = "detect"
+
+[[example]]
+name = "verify"
+required-features = ["encode"]
+
+[[example]]
+name = "keycal"
+required-features = ["encode"]
+
+[[example]]
+name = "calibrate"
+required-features = ["encode"]
+
 [dependencies]
 # hidraw backend ONLY: the libusb backend detaches kernel drivers, which is
 # dangerous on a device that is physically part of a keyboard.

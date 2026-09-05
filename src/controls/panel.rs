@@ -1,5 +1,8 @@
 //! The whole physical display, beneath the info-screen abstraction.
 
+// Only the encode-gated helpers take a canvas; without that feature the
+// panel still uploads pre-encoded JPEGs.
+#[cfg(feature = "encode")]
 use crate::canvas::Canvas;
 use crate::device::Galleon;
 use crate::error::Error;
